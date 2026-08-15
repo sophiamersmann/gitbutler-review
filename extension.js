@@ -387,8 +387,9 @@ async function uncommittedPlan(root, st) {
 const hunkLine = (hunk) => Number(/\+(\d+)/.exec(hunk)?.[1] ?? 1)
 
 class BranchTree {
-    constructor(reviewed) {
+    constructor(reviewed, overrides) {
         this.reviewed = reviewed
+        this.overrides = overrides
         this.changed = new vscode.EventEmitter()
         this.onDidChangeTreeData = this.changed.event
         this.overlap = undefined
@@ -409,8 +410,9 @@ class BranchTree {
         try {
             if (!node) return await this.topLevel(root)
             // top-first, as `but status` and the GitButler app show a stack
-            if (node.stack) return node.stack.branches.map((b) => branchItem(b))
-            if (node.folder) return this.rows(node.folder, 0, false)
+            if (node.stack) return node.stack.branches.map((b) => branchItem(b, this.overrides))
+            if (node.group)
+                return node.group.map((e) => fileItem(e, this.reviewed, false))
 
             const [files, dirty] = await Promise.all([
                 changedFiles(root, node.branch),
@@ -433,22 +435,13 @@ class BranchTree {
                       )
                     : [],
             }))
-            return this.rows(buildTree(entries), entries.length)
+            if (layoutFor(node.branch, this.overrides) === "list")
+                return entries.map((e) => fileItem(e, this.reviewed, true))
+            return groupsOf(entries).map(groupItem)
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
         }
-    }
-
-    /** Folders first, then loose files. `count` only matters at the root, where
-     *  it decides list-versus-tree; below that we are already in a tree. */
-    rows(node, count, root = true) {
-        if (root && layoutFor(count) === "list")
-            return descendants(node).map((e) => fileItem(e, this.reviewed, true))
-        return [
-            ...folders(node).map((d) => folderItem(d, this.reviewed)),
-            ...node.files.map((e) => fileItem(e, this.reviewed, false)),
-        ]
     }
 
     /** A one-branch stack is shown as the branch itself — no pointless wrapper. */
@@ -461,7 +454,7 @@ class BranchTree {
                 b.fileCount = files.get(b.name)?.length
         return stacks.map((stack) =>
             stack.branches.length === 1
-                ? branchItem(stack.branches[0])
+                ? branchItem(stack.branches[0], this.overrides)
                 : stackItem(stack)
         )
     }
@@ -639,7 +632,7 @@ function stackItem(stack) {
     return item
 }
 
-function branchItem(branch, primary) {
+function branchItem(branch, overrides) {
     const item = new vscode.TreeItem(
         branch.name,
         vscode.TreeItemCollapsibleState.Collapsed
@@ -674,82 +667,62 @@ function branchItem(branch, primary) {
             .filter(Boolean)
             .join("\n")
     )
-    item.contextValue = "branch"
+    item.contextValue = `branch:${layoutFor(branch, overrides)}`
     item.branch = branch
     return item
 }
 
 const reviewKey = (branch, file) => `reviewed:${branch.name}:${file}`
 
-const AUTO_TREE_THRESHOLD = 10
+const AUTO_GROUP_THRESHOLD = 10
 
-/** list | tree, resolving "auto" by size — a three-file branch as a tree is
- *  silly, a sixty-file branch as a flat list is what we started with. */
-function layoutFor(count) {
+const layoutKey = (branch) => `layout:${branch.name}`
+
+/** list | group. A per-branch choice beats the setting, which beats size — so
+ *  the setting stays the default and an override is visibly an exception. */
+function layoutFor(branch, overrides) {
+    const chosen = overrides?.get(layoutKey(branch))
+    if (chosen) return chosen
     const setting = cfg().get("fileLayout", "auto")
-    if (setting === "list" || setting === "tree") return setting
-    return count > AUTO_TREE_THRESHOLD ? "tree" : "list"
+    if (setting !== "auto") return setting
+    return (branch.fileCount ?? 0) > AUTO_GROUP_THRESHOLD ? "group" : "list"
 }
 
-/** Nested folders keyed by path segment. */
-function buildTree(entries) {
-    const root = { dirs: new Map(), files: [] }
+/** One row per directory, sorted by full path so siblings stay adjacent. The
+ *  label is the last segment and the description carries the parent, because in
+ *  a monorepo the discriminating segment sits at the end of a long shared prefix
+ *  — and the panel clips from the end. */
+function groupsOf(entries) {
+    const byDir = new Map()
     for (const e of entries) {
-        const parts = e.f.file.split("/")
-        parts.pop()
-        let node = root
-        for (const part of parts) {
-            if (!node.dirs.has(part))
-                node.dirs.set(part, { dirs: new Map(), files: [] })
-            node = node.dirs.get(part)
-        }
-        node.files.push(e)
+        const dir = path.dirname(e.f.file)
+        if (!byDir.has(dir)) byDir.set(dir, [])
+        byDir.get(dir).push(e)
     }
-    return root
+    return [...byDir]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([dir, files]) => ({ dir, files }))
 }
 
-/** Folder rows, with single-child chains merged into one — around half the
- *  directories in a monorepo hold a single file, and `a/b/c/d` as four nested
- *  rows is worse than the flat list it replaced. */
-function folders(node) {
-    return [...node.dirs].map(([name, child]) => {
-        let label = name
-        let cur = child
-        while (cur.files.length === 0 && cur.dirs.size === 1) {
-            const [next, grandchild] = [...cur.dirs][0]
-            label += `/${next}`
-            cur = grandchild
-        }
-        return { label, node: cur }
-    })
-}
-
-const descendants = (node) => [
-    ...node.files,
-    ...[...node.dirs.values()].flatMap(descendants),
-]
-
-function folderItem(dir, reviewed) {
-    const kids = descendants(dir.node)
+function groupItem(group) {
+    const parent = path.dirname(group.dir)
     const item = new vscode.TreeItem(
-        dir.label,
+        path.basename(group.dir) || group.dir,
         vscode.TreeItemCollapsibleState.Collapsed
     )
-    item.description = `${kids.length} file${kids.length === 1 ? "" : "s"}`
+    item.description = [
+        parent === "." ? "" : parent,
+        `${group.files.length} file${group.files.length === 1 ? "" : "s"}`,
+    ]
+        .filter(Boolean)
+        .join("  ·  ")
+    item.tooltip = group.dir
     item.iconPath = vscode.ThemeIcon.Folder
-    item.contextValue = "folder"
-    item.folder = dir.node
-    // ticking a folder ticks everything under it — the point of the tree on a
-    // sixty-file branch is not having to click sixty times
-    item.review = kids.map((e) => ({
-        key: reviewKey(e.branch, e.f.file),
-        blob: e.blob,
-    }))
-    item.checkboxState = item.review.every((r) => reviewed?.get(r.key) === r.blob)
-        ? vscode.TreeItemCheckboxState.Checked
-        : vscode.TreeItemCheckboxState.Unchecked
+    item.contextValue = "group"
+    item.group = group.files
     return item
 }
+
 
 function fileItem(entry, reviewed, showDir) {
     const { f, branch, blob, alsoIn } = entry
@@ -911,11 +884,13 @@ function prItem(row) {
 
 function activate(context) {
     // workspaceState, so ticks are per-repo and survive a reload
-    const reviewed = {
+    const memento = {
         get: (k) => context.workspaceState.get(k),
         set: (k, v) => context.workspaceState.update(k, v),
     }
-    const tree = new BranchTree(reviewed)
+    const reviewed = memento
+    const overrides = memento
+    const tree = new BranchTree(reviewed, overrides)
     const prs = new PrTree()
     const branchView = vscode.window.createTreeView("butReview.branches", {
         treeDataProvider: tree,
@@ -992,17 +967,7 @@ function activate(context) {
         }
     }
 
-    // "auto" reads as list for the button's purposes: it only resolves per
-    // branch, and the title bar has no branch in hand
-    const syncLayoutContext = () =>
-        vscode.commands.executeCommand(
-            "setContext",
-            "butReview.layout",
-            cfg().get("fileLayout", "auto") === "tree" ? "tree" : "list"
-        )
-
     syncVisibility()
-    syncLayoutContext()
 
     function refreshAll() {
         tree.refresh()
@@ -1065,20 +1030,22 @@ function activate(context) {
 
         vscode.commands.registerCommand("butReview.refresh", refreshAll),
 
-        ...["tree", "list"].map((mode) =>
+        // per branch, not global: layout is a property of how big a branch is,
+        // and a title-bar button could only ever mean "all of them"
+        ...["list", "group"].map((mode) =>
             vscode.commands.registerCommand(
                 `butReview.viewAs${mode[0].toUpperCase()}${mode.slice(1)}`,
-                async () => {
-                    await cfg().update(
-                        "fileLayout",
-                        mode,
-                        vscode.ConfigurationTarget.Global
-                    )
-                    syncLayoutContext()
+                (node) => {
+                    overrides.set(layoutKey(node.branch), mode)
                     tree.refresh()
                 }
             )
         ),
+
+        vscode.commands.registerCommand("butReview.viewAsDefault", (node) => {
+            overrides.set(layoutKey(node.branch), undefined)
+            tree.refresh()
+        }),
 
         vscode.window.onDidChangeVisibleTextEditors(paint),
 

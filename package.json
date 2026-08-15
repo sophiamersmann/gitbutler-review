@@ -2,7 +2,7 @@
     "name": "but-review",
     "displayName": "GitButler Review",
     "description": "Review GitButler stacks, place uncommitted changes, and track their pull requests",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "publisher": "sophiamersmann",
     "engines": {
         "vscode": "^1.90.0"
@@ -130,16 +130,19 @@
                 "category": "GitButler Review"
             },
             {
-                "command": "butReview.viewAsTree",
-                "title": "View as Tree",
-                "category": "GitButler Review",
-                "icon": "$(list-tree)"
-            },
-            {
                 "command": "butReview.viewAsList",
                 "title": "View as List",
-                "category": "GitButler Review",
-                "icon": "$(list-flat)"
+                "category": "GitButler Review"
+            },
+            {
+                "command": "butReview.viewAsGroup",
+                "title": "Group by Directory",
+                "category": "GitButler Review"
+            },
+            {
+                "command": "butReview.viewAsDefault",
+                "title": "Use Default Layout",
+                "category": "GitButler Review"
             }
         ],
         "menus": {
@@ -158,6 +161,18 @@
                 },
                 {
                     "command": "butReview.openUrl",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.viewAsList",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.viewAsGroup",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.viewAsDefault",
                     "when": "false"
                 }
             ],
@@ -181,28 +196,33 @@
                     "command": "butReview.refreshPrs",
                     "when": "view == butReview.prs",
                     "group": "navigation"
-                },
-                {
-                    "command": "butReview.viewAsTree",
-                    "when": "view == butReview.branches && butReview.layout != tree",
-                    "group": "navigation@0"
-                },
-                {
-                    "command": "butReview.viewAsList",
-                    "when": "view == butReview.branches && butReview.layout == tree",
-                    "group": "navigation@0"
                 }
             ],
             "view/item/context": [
                 {
                     "command": "butReview.reviewBranch",
-                    "when": "view == butReview.branches && viewItem == branch",
+                    "when": "view == butReview.branches && viewItem =~ /^branch/",
                     "group": "inline@1"
                 },
                 {
                     "command": "butReview.amendInto",
                     "when": "view == butReview.uncommitted && viewItem == unanchoredFile",
                     "group": "inline"
+                },
+                {
+                    "command": "butReview.viewAsGroup",
+                    "when": "view == butReview.branches && viewItem == branch:list",
+                    "group": "layout"
+                },
+                {
+                    "command": "butReview.viewAsList",
+                    "when": "view == butReview.branches && viewItem == branch:group",
+                    "group": "layout"
+                },
+                {
+                    "command": "butReview.viewAsDefault",
+                    "when": "view == butReview.branches && viewItem =~ /^branch/",
+                    "group": "layout"
                 }
             ]
         },
@@ -244,15 +264,15 @@
                     "enum": [
                         "auto",
                         "list",
-                        "tree"
+                        "group"
                     ],
                     "default": "auto",
                     "enumDescriptions": [
-                        "Flat list for small branches, folder tree for large ones",
+                        "Flat list for small branches, grouped by directory for large ones",
                         "Always a flat list",
-                        "Always a folder tree, with single-child chains merged"
+                        "Always grouped by directory"
                     ],
-                    "markdownDescription": "How a branch's changed files are laid out. `auto` switches to a tree above 10 files."
+                    "markdownDescription": "Default layout for a branch's changed files. `auto` groups above 10 files. Override per branch from the branch's context menu."
                 }
             }
         }

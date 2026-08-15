@@ -1,6 +1,9 @@
-// Builds every tree row against the live workspace with a stubbed `vscode`,
-// so runtime-only faults (TDZ, undefined reads) surface without launching VSCode.
+// Builds every tree row against the live GitButler workspace with a stubbed
+// `vscode` module, so runtime-only faults surface without launching VSCode.
+// It has caught a TDZ crash, a whole view silently deleted by a bad edit, and
+// hunk parsing broken by `diff.external` — all of which `node --check` passed.
 const fs = require("fs")
+const path = require("path")
 const { execFileSync } = require("child_process")
 
 const stub = {
@@ -17,6 +20,7 @@ const stub = {
             this.id = i
             this.color = c
         }
+        static Folder = { id: "folder" }
     },
     ThemeColor: class {
         constructor(i) {
@@ -47,7 +51,7 @@ const stub = {
         getConfiguration: () => ({
             get: (k, d) =>
                 ({
-                    ignoredChecks: ["site-screenshot"],
+                    ignoredChecks: [],
                     botReviewers: ["chatgpt-codex-connector", "github-actions"],
                     demoteBranches: ["docs"],
                 })[k] ?? d,
@@ -57,105 +61,67 @@ const stub = {
     env: {},
 }
 
-const src = fs.readFileSync(require("path").join(__dirname, "extension.js"), "utf8")
 const api = new Function(
     "require",
     "module",
     "exports",
-    src +
-        ";return {branchItem,stackItem,stacksOf,ciState,prItem,prStackItem,humanDecision,stackName,fileItem,folderItem,blobShas,changedFiles,buildTree,folders,descendants,layoutFor}"
-)(
-    (r) => (r === "vscode" ? stub : require(r)),
-    { exports: {} },
-    {}
-)
+    fs.readFileSync(path.join(__dirname, "extension.js"), "utf8") +
+        ";return {branchItem,stackItem,stacksOf,prItem,prStackItem,fileItem," +
+        "groupItem,groupsOf,blobShas,changedFiles,layoutFor,layoutKey}"
+)((r) => (r === "vscode" ? stub : require(r)), { exports: {} }, {})
 
+const git = (...args) => execFileSync("git", args, { maxBuffer: 1e8 }).toString()
+
+const root = process.cwd()
 const st = JSON.parse(
     execFileSync("but", ["status", "--json"], { maxBuffer: 1e8 })
 )
 const stacks = api.stacksOf(st)
+
 // mirror what BranchTree.topLevel attaches before building rows
 for (const s of stacks)
     for (const b of s.branches)
-        b.fileCount = execFileSync(
-            "git",
-            ["diff", "--no-ext-diff", "--name-only", "--no-renames", b.base, b.name],
-            { maxBuffer: 1e8 }
-        ).toString().split("\n").filter(Boolean).length
+        b.fileCount = git(
+            "diff",
+            "--no-ext-diff",
+            "--name-only",
+            "--no-renames",
+            b.base,
+            b.name,
+            "--"
+        )
+            .split("\n")
+            .filter(Boolean).length
 
+const overrides = new Map()
 let branches = 0
 let stackRows = 0
 for (const s of stacks) {
     if (s.branches.length === 1) {
-        api.branchItem(s.branches[0], s.primary)
+        api.branchItem(s.branches[0], overrides)
         branches++
     } else {
         api.stackItem(s)
         stackRows++
         for (const b of s.branches) {
-            api.branchItem(b)
+            api.branchItem(b, overrides)
             branches++
         }
     }
 }
 console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
 
-// file rows exercise the review checkbox, whose state comes from a blob SHA
-;(async () => {
-    // the biggest branch, so the row builders get a real workout
-    const branch = stacks
-        .flatMap((s) => s.branches)
-        .reduce((a, b) => ((b.fileCount ?? 0) > (a.fileCount ?? 0) ? b : a))
-    const root = process.cwd()
-    const files = await api.changedFiles(root, branch)
-    const blobs = await api.blobShas(root, branch, files.map((f) => f.file))
-    const entries = files.map((f) => ({
-        f,
-        branch,
-        blob: blobs.get(f.file) ?? "gone",
-        alsoIn: [],
-    }))
-    const store = new Map()
-
-    let rows = entries.map((e) => api.fileItem(e, store, true))
-    const unchecked = rows.filter((r) => r.checkboxState === 0).length
-    for (const r of rows) for (const x of r.review) store.set(x.key, x.blob)
-    rows = entries.map((e) => api.fileItem(e, store, true))
-    const checked = rows.filter((r) => r.checkboxState === 1).length
-    const stale = api.fileItem({ ...entries[0], blob: "0000000" }, store, true)
-    console.log(
-        `ok: ${rows.length} file rows — ${unchecked} unchecked initially, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}`
-    )
-
-    const tree = api.buildTree(entries)
-    const top = api.folders(tree)
-    const deepest = Math.max(
-        ...entries.map((e) => e.f.file.split("/").length - 1)
-    )
-    const compacted = top.filter((d) => d.label.includes("/")).length
-    console.log(
-        `ok: tree — ${top.length} top-level rows for ${entries.length} files (paths up to ${deepest} deep), ${compacted} chains compacted`
-    )
-    console.log(
-        `   layout: ${entries.length} files -> ${api.layoutFor(entries.length)}, 3 files -> ${api.layoutFor(3)}`
-    )
-
-    // every file must be reachable, and a folder tick must cover its subtree
-    const reachable = api.descendants(tree).length
-    const folder = api.folderItem(top[0], store)
-    const allTicked = folder.checkboxState === 1
-    store.clear()
-    const noneTicked = api.folderItem(top[0], store).checkboxState === 0
-    console.log(
-        `ok: ${reachable} files reachable through the tree; folder "${top[0].label}" covers ${folder.review.length}, reads ${allTicked ? "checked" : "UNCHECKED (bug)"} when all ticked and ${noneTicked ? "unchecked" : "CHECKED (bug)"} when none are`
-    )
-})()
-
 const prs = JSON.parse(
     execFileSync(
         "gh",
         [
-            "pr", "list", "--author", "@me", "--limit", "100", "--json",
+            "pr",
+            "list",
+            "--author",
+            "@me",
+            "--limit",
+            "100",
+            "--json",
             "number,title,url,isDraft,reviews,reviewRequests,headRefName",
         ],
         { maxBuffer: 1e8 }
@@ -168,67 +134,68 @@ for (const s of stacks) {
         .map((b) => ({ branch: b, pr: byBranch.get(b.name) }))
         .filter((r) => r.pr)
     if (!rows.length) continue
-    if (rows.length > 1) {
-        rows[0].next = true
-        api.prStackItem(s, rows)
-    }
+    if (rows.length > 1) api.prStackItem(s, rows)
     for (const r of rows) {
         api.prItem(r)
         prRows++
     }
 }
 console.log(`ok: ${prRows} pr rows`)
-
-for (const s of stacks) {
-    const b = s.branches[s.branches.length - 1]
-    const item = api.branchItem(b, s.primary)
-    console.log(
-        `  ${item.iconPath.id.padEnd(10)} ${String(item.iconPath.color.id).padEnd(22)} ${item.label.padEnd(28)} ${item.description}`
-    )
-}
-
-console.log("\n▾ PULL REQUESTS")
-const BADGE = { fail: "✗", run: "…", next: "»" }
-for (const s of stacks) {
-    const rows = s.branches
-        .map((b) => ({ branch: b, pr: byBranch.get(b.name) }))
-        .filter((r) => r.pr)
-    if (!rows.length) continue
-    if (rows.length > 1) {
-        rows[0].next = true
-        const si = api.prStackItem(s, rows)
-        console.log(`   ${si.label}  [${si.description}]`)
-    }
-    for (const r of rows) {
-        const it = api.prItem(r)
-        const CIRCLE = { "needs work": "🔴", "CI running": "🟡", "review requested": "🔵", approved: "🟢", "nothing pending": "⚪" }
-        const q = decodeURIComponent(it.resourceUri.toString().split("?")[1] ?? "")
-        console.log(
-            `     ${CIRCLE[q] ?? "??"}  ${it.label.padEnd(30)} ${String(it.description).slice(0, 40).padEnd(42)} ${it.iconPath.id.replace("git-pull-request", "pr")}`
-        )
-    }
-}
-
-// A quick look at the shape, since "compacted" is easier to check by eye
 ;(async () => {
-    await new Promise((r) => setTimeout(r, 200))
+    // the biggest branch, so the row builders get a real workout
     const branch = stacks
         .flatMap((s) => s.branches)
-        .reduce((a, b) => ((b.fileCount ?? 0) > (a.fileCount ?? 0) ? b : a))
-    const files = await api.changedFiles(process.cwd(), branch)
-    const tree = api.buildTree(
-        files.map((f) => ({ f, branch, blob: "x", alsoIn: [] }))
+        .reduce((a, b) => (b.fileCount > a.fileCount ? b : a))
+    const files = await api.changedFiles(root, branch)
+    const blobs = await api.blobShas(
+        root,
+        branch,
+        files.map((f) => f.file)
     )
-    console.log(`\n▾ ${branch.name} (tree)`)
-    const walk = (node, depth) => {
-        for (const d of api.folders(node)) {
-            console.log(
-                `${"  ".repeat(depth + 2)}▸ ${d.label.padEnd(30 - depth * 2)} ${api.descendants(d.node).length} files`
-            )
-            if (depth < 1) walk(d.node, depth + 1)
-        }
-        for (const e of node.files)
-            console.log(`${"  ".repeat(depth + 2)}  ${e.f.file.split("/").pop()}`)
-    }
-    walk(tree, 0)
+    const entries = files.map((f) => ({
+        f,
+        branch,
+        blob: blobs.get(f.file) ?? "gone",
+        alsoIn: [],
+    }))
+
+    // review ticks key on the blob, so a changed file must clear its own tick
+    const store = new Map()
+    let rows = entries.map((e) => api.fileItem(e, store, true))
+    const unchecked = rows.filter((r) => r.checkboxState === 0).length
+    for (const r of rows) for (const x of r.review) store.set(x.key, x.blob)
+    rows = entries.map((e) => api.fileItem(e, store, true))
+    const checked = rows.filter((r) => r.checkboxState === 1).length
+    const stale = api.fileItem({ ...entries[0], blob: "0000" }, store, true)
+    console.log(
+        `ok: ${rows.length} file rows — ${unchecked} unchecked, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}`
+    )
+
+    const groups = api.groupsOf(entries)
+    const groupRows = groups.map(api.groupItem)
+    const covered = groupRows.reduce((n, r) => n + r.group.length, 0)
+    const longestLabel = Math.max(...groupRows.map((r) => r.label.length))
+    const longestPath = Math.max(...groups.map((g) => g.dir.length))
+    console.log(
+        `ok: ${groups.length} groups covering ${covered}/${entries.length} files; longest label ${longestLabel} chars vs longest path ${longestPath}; groups carry no checkbox (${groupRows[0].checkboxState === undefined ? "confirmed" : "STILL SET (bug)"})`
+    )
+
+    // per-branch override beats the setting, which beats size
+    const big = { name: "big", fileCount: 64 }
+    const small = { name: "small", fileCount: 3 }
+    const auto = [api.layoutFor(big, overrides), api.layoutFor(small, overrides)]
+    overrides.set(api.layoutKey(big), "list")
+    overrides.set(api.layoutKey(small), "group")
+    const forced = [
+        api.layoutFor(big, overrides),
+        api.layoutFor(small, overrides),
+    ]
+    console.log(
+        `ok: layout — auto gives ${auto.join("/")} for 64/3 files, overrides give ${forced.join("/")}`
+    )
+
+    console.log(`\n▾ ${branch.name} — grouped`)
+    for (const r of groupRows.slice(0, 8))
+        console.log(`     ${String(r.label).padEnd(18)} ${r.description}`)
+    if (groupRows.length > 8) console.log(`     … ${groupRows.length - 8} more`)
 })()
