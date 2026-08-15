@@ -8,13 +8,22 @@ const { run } = require("./exec")
 // Used as the right-hand side for files that no longer exist.
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
+// quotePath off: git otherwise prints a non-ASCII path C-quoted ("sub/\303\274"),
+// and every path parsed here is used to open a real file.
+const git = (root, args) =>
+    run("git", ["-c", "core.quotePath=false", ...args], root)
+
 const diffNames = async (root, a, b) =>
     (
-        await run(
-            "git",
-            ["diff", "--no-ext-diff", "--name-only", "--no-renames", a, b, "--"],
-            root
-        )
+        await git(root, [
+            "diff",
+            "--no-ext-diff",
+            "--name-only",
+            "--no-renames",
+            a,
+            b,
+            "--",
+        ])
     )
         .split("\n")
         .filter(Boolean)
@@ -26,11 +35,17 @@ const diffNames = async (root, a, b) =>
  *  survives a reload but clears itself the moment the branch's version of that
  *  file changes — which is exactly what absorbing an edit does. */
 async function changedFiles(root, branch) {
-    const out = await run(
-        "git",
-        ["diff", "--no-ext-diff", "--no-renames", "--raw", "--abbrev=40", "--numstat", branch.base, branch.name, "--"],
-        root
-    )
+    const out = await git(root, [
+        "diff",
+        "--no-ext-diff",
+        "--no-renames",
+        "--raw",
+        "--abbrev=40",
+        "--numstat",
+        branch.base,
+        branch.name,
+        "--",
+    ])
     const files = []
     const churn = new Map()
     for (const line of out.split("\n")) {
@@ -55,11 +70,16 @@ async function changedFiles(root, branch) {
  *  Compared against HEAD (the workspace commit) rather than the worktree, so
  *  your own in-progress edits aren't flagged as somebody else's. */
 async function foreignRanges(root, branch, file) {
-    const out = await run(
-        "git",
-        ["diff", "--no-ext-diff", "-U0", "--no-renames", branch.name, "HEAD", "--", file],
-        root
-    )
+    const out = await git(root, [
+        "diff",
+        "--no-ext-diff",
+        "-U0",
+        "--no-renames",
+        branch.name,
+        "HEAD",
+        "--",
+        file,
+    ])
     const ranges = []
     for (const line of out.split("\n")) {
         const m = /^@@ -\S+ \+(\d+)(?:,(\d+))? @@/.exec(line)

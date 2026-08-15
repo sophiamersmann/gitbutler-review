@@ -28,8 +28,10 @@ const repoRoot = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
 
 const cfg = () => vscode.workspace.getConfiguration("butReview")
 
+// from(), not parse(): a path containing # or ? would otherwise be reparsed as
+// a fragment or query, losing both the status letter and the path
 const uri = (scheme, file, query) =>
-    vscode.Uri.parse(`${scheme}:/${file}?${query}`)
+    vscode.Uri.from({ scheme, path: `/${file}`, query })
 
 /** Coarse on purpose: "3d ago" is what separates live work from stale, and a
  *  scan never needs more precision than that. */

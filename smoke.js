@@ -35,6 +35,12 @@ const stub = {
     Uri: {
         file: (p) => ({ fsPath: p, toString: () => "file://" + p }),
         parse: (u) => ({ toString: () => u }),
+        from: ({ scheme, path, query }) => ({
+            scheme,
+            path,
+            query,
+            toString: () => `${scheme}:${path}?${query}`,
+        }),
     },
     EventEmitter: class {
         constructor() {

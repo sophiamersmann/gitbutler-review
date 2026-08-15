@@ -63,19 +63,13 @@ function activate(context) {
      *  recomputed after an absorb rather than showing stale dimming */
     const marked = new Map()
 
-    // Only what's on screen: paint() can't use the rest, and `marked` keeps
-    // every diff opened this session.
+    // Every entry, not just the visible ones: a backgrounded diff is painted
+    // from `marked` the moment you switch back to its tab.
     const repaintOpen = async () => {
         const root = repoRoot()
         if (!root) return
-        const visible = new Set(
-            vscode.window.visibleTextEditors.map((e) =>
-                e.document.uri.toString()
-            )
-        )
-        const onScreen = [...marked].filter(([key]) => visible.has(key))
         await Promise.all(
-            onScreen.map(async ([key, m]) => {
+            [...marked].map(async ([key, m]) => {
                 const ranges = await foreignRanges(root, m.branch, m.file).catch(
                     () => []
                 )
@@ -89,14 +83,16 @@ function activate(context) {
     const paint = () => {
         for (const editor of vscode.window.visibleTextEditors) {
             const m = marked.get(editor.document.uri.toString())
-            if (m)
-                editor.setDecorations(
-                    foreign,
-                    m.ranges.map((range) => ({
-                        range,
-                        hoverMessage: m.hover,
-                    }))
-                )
+            // unconditional: an editor that lost its entry has to be cleared
+            editor.setDecorations(
+                foreign,
+                m
+                    ? m.ranges.map((range) => ({
+                          range,
+                          hoverMessage: m.hover,
+                      }))
+                    : []
+            )
         }
     }
 
@@ -220,6 +216,8 @@ function activate(context) {
                                 }.`
                             ),
                         })
+                    // a reopen with nothing foreign left must drop the old entry
+                    else marked.delete(right.toString())
                 }
 
                 await openDiff(
