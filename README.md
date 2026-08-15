@@ -91,9 +91,15 @@ the dimming.
 node smoke.js
 ```
 
-Builds every tree row against your live GitButler workspace with a stubbed `vscode`
-module. It has caught two runtime-only faults that `node --check` passed clean, so run it
-after touching any of the item builders.
+First cross-checks the manifest against the code — every declared command is registered,
+every menu reference resolves, every setting and theme colour read in code is declared,
+the container icon exists. That seam is invisible to JS testing: a command declared but
+never registered renders as a working button bound to nothing.
+
+Then builds every tree row against your live GitButler workspace with a stubbed `vscode`
+module. It has caught a TDZ crash, a whole view deleted by a bad edit, hunk parsing
+broken by `diff.external`, and a dead absorb button — none of which `node --check` saw.
+Run it after touching anything.
 
 There is no build step — it's plain JS loaded directly.
 

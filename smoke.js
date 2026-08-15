@@ -61,11 +61,82 @@ const stub = {
     env: {},
 }
 
+// --- manifest vs code -------------------------------------------------------
+// The seam JS testing can't see: a command declared but never registered renders
+// as a working button bound to nothing, which is how the absorb button sat dead
+// for four commits. Cheap, needs no repo, so it runs first.
+const src = fs.readFileSync(path.join(__dirname, "extension.js"), "utf8")
+const manifest = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "package.json"), "utf8")
+)
+const contributes = manifest.contributes
+const problems = []
+const gripe = (what, set) => {
+    if (set.size) problems.push(`${what}: ${[...set].join(", ")}`)
+}
+const missing = (used, declared) =>
+    new Set([...used].filter((x) => !declared.has(x)))
+
+const declaredCommands = new Set(contributes.commands.map((c) => c.command))
+const registered = new Set([
+    ...[...src.matchAll(/registerCommand\(\s*"([^"]+)"/g)].map((m) => m[1]),
+    // commands built from a template, tagged at the call site
+    ...[...src.matchAll(/smoke:registers ([^\n]+)/g)].flatMap((m) =>
+        m[1].trim().split(/\s+/)
+    ),
+])
+gripe("declared but never registered", missing(declaredCommands, registered))
+gripe("registered but not declared", missing(registered, declaredCommands))
+
+const menuCommands = new Set(
+    Object.values(contributes.menus).flatMap((ms) => ms.map((m) => m.command))
+)
+gripe("used by a menu but not declared", missing(menuCommands, declaredCommands))
+
+const views = new Set(
+    Object.values(contributes.views).flatMap((vs) => vs.map((v) => v.id))
+)
+const menuViews = new Set(
+    Object.values(contributes.menus)
+        .flatMap((ms) => ms.map((m) => m.when ?? ""))
+        .flatMap((w) => [...w.matchAll(/view == ([\w.]+)/g)].map((m) => m[1]))
+)
+gripe("named in a when-clause but not a view", missing(menuViews, views))
+
+const declaredSettings = new Set(
+    Object.keys(contributes.configuration.properties)
+)
+const usedSettings = new Set(
+    [...src.matchAll(/cfg\(\)\s*\n?\s*\.?\s*get\(\s*"([^"]+)"/g)].map(
+        (m) => `butReview.${m[1]}`
+    )
+)
+gripe("read in code but not declared", missing(usedSettings, declaredSettings))
+
+const declaredColors = new Set(contributes.colors.map((c) => c.id))
+const usedColors = new Set(
+    [...src.matchAll(/ThemeColor\("(butReview\.[^"]+)"\)/g)].map((m) => m[1])
+)
+gripe("used as a colour but not declared", missing(usedColors, declaredColors))
+
+const icon = contributes.viewsContainers.activitybar[0].icon
+if (!fs.existsSync(path.join(__dirname, icon)))
+    problems.push(`container icon missing: ${icon}`)
+
+if (problems.length) {
+    for (const p of problems) console.log(`PROBLEM  ${p}`)
+    process.exitCode = 1
+} else {
+    console.log(
+        `ok: manifest — ${declaredCommands.size} commands, ${menuCommands.size} menu refs, ${declaredSettings.size} settings, ${declaredColors.size} colours all resolve`
+    )
+}
+
 const api = new Function(
     "require",
     "module",
     "exports",
-    fs.readFileSync(path.join(__dirname, "extension.js"), "utf8") +
+    src +
         ";return {branchItem,stackItem,stacksOf,prItem,prStackItem,fileItem," +
         "groupItem,groupsOf,blobShas,changedFiles,layoutFor,layoutKey}"
 )((r) => (r === "vscode" ? stub : require(r)), { exports: {} }, {})

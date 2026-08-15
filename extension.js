@@ -1032,6 +1032,7 @@ function activate(context) {
 
         // per branch, not global: layout is a property of how big a branch is,
         // and a title-bar button could only ever mean "all of them"
+        // smoke:registers butReview.viewAsList butReview.viewAsGroup
         ...["list", "group"].map((mode) =>
             vscode.commands.registerCommand(
                 `butReview.viewAs${mode[0].toUpperCase()}${mode.slice(1)}`,
