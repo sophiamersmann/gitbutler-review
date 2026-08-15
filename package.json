@@ -2,7 +2,7 @@
     "name": "but-review",
     "displayName": "GitButler Review",
     "description": "Review GitButler stacks, place uncommitted changes, and track their pull requests",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "publisher": "sophiamersmann",
     "engines": {
         "vscode": "^1.90.0"
@@ -211,12 +211,12 @@
                 },
                 {
                     "command": "butReview.viewAsGroup",
-                    "when": "view == butReview.branches && viewItem == branch:list",
+                    "when": "view == butReview.branches && viewItem =~ /^branch:list$/",
                     "group": "layout"
                 },
                 {
                     "command": "butReview.viewAsList",
-                    "when": "view == butReview.branches && viewItem == branch:group",
+                    "when": "view == butReview.branches && viewItem =~ /^branch:group$/",
                     "group": "layout"
                 },
                 {
