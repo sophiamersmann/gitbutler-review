@@ -499,12 +499,6 @@ class UncommittedTree {
 
             const plan = await uncommittedPlan(root, await status(root))
             this.plan = plan
-            this.view.badge = plan.unanchored.length
-                ? {
-                      value: plan.unanchored.length,
-                      tooltip: `${plan.unanchored.length} change${plan.unanchored.length > 1 ? "s need" : " needs"} placing`,
-                  }
-                : undefined
             const anchored = plan.groups.reduce((n, g) => n + g.files.length, 0)
             this.view.description = plan.unanchored.length
                 ? `${anchored} anchored, ${plan.unanchored.length} unanchored`
@@ -904,7 +898,7 @@ function activate(context) {
     const dirtyView = vscode.window.createTreeView("butReview.uncommitted", {
         treeDataProvider: dirty,
     })
-    dirty.view = dirtyView // needs the view to set its badge; set after creation
+    dirty.view = dirtyView // needs the view for its description; set after creation
     let saveTimer
 
     // The view is hidden while the tree is clean, so nothing renders an empty
@@ -921,7 +915,6 @@ function activate(context) {
             "butReview.hasUncommitted",
             n > 0
         )
-        if (!n) dirtyView.badge = undefined
     }
 
     const openDiff = (left, right, title) =>

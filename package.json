@@ -2,7 +2,7 @@
     "name": "but-review",
     "displayName": "GitButler Review",
     "description": "Review GitButler stacks, place uncommitted changes, and track their pull requests",
-    "version": "0.8.0",
+    "version": "0.8.1",
     "publisher": "sophiamersmann",
     "engines": {
         "vscode": "^1.90.0"
