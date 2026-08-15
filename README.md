@@ -27,7 +27,9 @@ content provider), right is the live workspace file. Edits land in your working 
 ## Views
 
 **Branches** — applied stacks, named from the `(topic)` convention in commit subjects and
-sorted by recent activity. Click a file for an editable diff, or tick it off once reviewed.
+sorted by recent activity. Click a file for an editable diff, or tick it off once
+reviewed. Files open one at a time; there is no bulk-open, since a branch is read file by
+file anyway.
 
 Ticks are stored per repo and keyed on the file's blob SHA at the branch tip, so they
 survive a reload but clear themselves as soon as the branch's version of that file

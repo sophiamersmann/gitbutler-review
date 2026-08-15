@@ -2,7 +2,7 @@
     "name": "but-review",
     "displayName": "GitButler Review",
     "description": "Review GitButler stacks, place uncommitted changes, and track their pull requests",
-    "version": "0.5.2",
+    "version": "0.6.0",
     "publisher": "sophiamersmann",
     "engines": {
         "vscode": "^1.90.0"
@@ -84,12 +84,6 @@
             ]
         },
         "commands": [
-            {
-                "command": "butReview.reviewBranch",
-                "title": "Open All Changes",
-                "category": "GitButler Review",
-                "icon": "$(diff-multiple)"
-            },
             {
                 "command": "butReview.absorb",
                 "title": "Absorb Uncommitted Changes",
@@ -201,11 +195,6 @@
                 }
             ],
             "view/item/context": [
-                {
-                    "command": "butReview.reviewBranch",
-                    "when": "view == butReview.branches && viewItem =~ /^branch/",
-                    "group": "inline@1"
-                },
                 {
                     "command": "butReview.amendInto",
                     "when": "view == butReview.uncommitted && viewItem == unanchoredFile",
