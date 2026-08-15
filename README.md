@@ -34,8 +34,9 @@ survive a reload but clear themselves as soon as the branch's version of that fi
 changes — absorbing an edit into a file you had already reviewed un-ticks it.
 
 Files are shown as a flat list, or grouped by directory once there are enough of them to
-warrant it. A group's label is the directory's last segment with the parent in grey
-beside it — in a monorepo the part that tells directories apart sits at the end of a long
+warrant it. A directory holding a single file stays a plain row rather than becoming a group you
+have to expand. Otherwise a group's label is the directory's last segment with the parent
+in grey beside it — in a monorepo the part that tells directories apart sits at the end of a long
 shared prefix, and the panel clips from the end.
 
 Layout is chosen per branch — an icon on the branch row, or its context menu — so a

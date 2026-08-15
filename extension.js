@@ -437,7 +437,13 @@ class BranchTree {
             }))
             if (layoutFor(node.branch, this.overrides) === "list")
                 return entries.map((e) => fileItem(e, this.reviewed, true))
-            return groupsOf(entries).map(groupItem)
+            // a group of one is two rows and an expand to reach a single file,
+            // so it stays a plain row — sorted where its directory would sit
+            return groupsOf(entries).map((g) =>
+                g.files.length === 1
+                    ? fileItem(g.files[0], this.reviewed, true)
+                    : groupItem(g)
+            )
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []

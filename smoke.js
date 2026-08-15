@@ -172,12 +172,16 @@ console.log(`ok: ${prRows} pr rows`)
     )
 
     const groups = api.groupsOf(entries)
-    const groupRows = groups.map(api.groupItem)
-    const covered = groupRows.reduce((n, r) => n + r.group.length, 0)
+    const singles = groups.filter((g) => g.files.length === 1)
+    const groupRows = groups
+        .filter((g) => g.files.length > 1)
+        .map(api.groupItem)
+    const covered =
+        groupRows.reduce((n, r) => n + r.group.length, 0) + singles.length
     const longestLabel = Math.max(...groupRows.map((r) => r.label.length))
     const longestPath = Math.max(...groups.map((g) => g.dir.length))
     console.log(
-        `ok: ${groups.length} groups covering ${covered}/${entries.length} files; longest label ${longestLabel} chars vs longest path ${longestPath}; groups carry no checkbox (${groupRows[0].checkboxState === undefined ? "confirmed" : "STILL SET (bug)"})`
+        `ok: ${groupRows.length} groups + ${singles.length} promoted singletons covering ${covered}/${entries.length} files; longest label ${longestLabel} chars vs longest path ${longestPath}; groups carry no checkbox (${groupRows[0].checkboxState === undefined ? "confirmed" : "STILL SET (bug)"})`
     )
 
     // per-branch override beats the setting, which beats size
