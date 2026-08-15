@@ -4,12 +4,6 @@
 const path = require("path")
 const { cfg } = require("./exec")
 
-const CI_COLOR = {
-    success: "testing.iconPassed",
-    failure: "testing.iconFailed",
-    unknown: "testing.iconQueued",
-}
-
 // One circle summarising the PR, not two independent signals: 🟢 is a surrogate
 // pair, so it already fills the 2-character badge budget on its own. Ordered by
 // what it asks of you, most demanding first.
@@ -40,21 +34,10 @@ function ciState(branch) {
     const pending = keep(branch.pending)
     const passing = keep(branch.passing)
     if (failing.length)
-        return {
-            state: "failing",
-            label: `✗ ${failing.length} failing`,
-            color: CI_COLOR.failure,
-            failing,
-        }
+        return { state: "failing", label: `✗ ${failing.length} failing`, failing }
     if (pending.length)
-        return {
-            state: "running",
-            label: `… ${pending.length} running`,
-            color: CI_COLOR.unknown,
-            failing,
-        }
-    if (passing.length)
-        return { state: "passing", label: "✓ CI", color: CI_COLOR.success, failing }
+        return { state: "running", label: `… ${pending.length} running`, failing }
+    if (passing.length) return { state: "passing", label: "✓ CI", failing }
     return { failing }
 }
 
@@ -137,13 +120,7 @@ function layoutFor(branch, overrides) {
  *  a monorepo the discriminating segment sits at the end of a long shared prefix
  *  — and the panel clips from the end. */
 function groupsOf(entries) {
-    const byDir = new Map()
-    for (const e of entries) {
-        const dir = path.dirname(e.f.file)
-        if (!byDir.has(dir)) byDir.set(dir, [])
-        byDir.get(dir).push(e)
-    }
-    return [...byDir]
+    return [...Map.groupBy(entries, (e) => path.dirname(e.f.file))]
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([dir, files]) => ({ dir, files }))
 }
@@ -151,4 +128,4 @@ function groupsOf(entries) {
 /** "@531,6 +531,8" -> the line the hunk starts at in the working copy */
 const hunkLine = (hunk) => Number(/\+(\d+)/.exec(hunk)?.[1] ?? 1)
 
-module.exports = { CI_COLOR, ROLLUP, rollup, ciState, isBot, humanDecision, isDemoted, stackName, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine }
+module.exports = { rollup, ciState, humanDecision, isDemoted, stackName, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine }

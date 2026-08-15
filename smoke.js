@@ -151,30 +151,18 @@ const api = {
     ...require("./src/items"),
 }
 
-const git = (...args) => execFileSync("git", args, { maxBuffer: 1e8 }).toString()
-
 const root = process.cwd()
 const st = JSON.parse(
     execFileSync("but", ["status", "--json"], { maxBuffer: 1e8 })
 )
 const stacks = api.stacksOf(st)
-
-// mirror what BranchTree.topLevel attaches before building rows
-for (const s of stacks)
-    for (const b of s.branches)
-        b.fileCount = git(
-            "diff",
-            "--no-ext-diff",
-            "--name-only",
-            "--no-renames",
-            b.base,
-            b.name,
-            "--"
-        )
-            .split("\n")
-            .filter(Boolean).length
-
 const overrides = new Map()
+;(async () => {
+// mirror what BranchTree.topLevel attaches before building rows
+const fileMap = await api.branchFiles(root, stacks)
+for (const s of stacks)
+    for (const b of s.branches) b.fileCount = fileMap.get(b.name)?.length
+
 let branches = 0
 let stackRows = 0
 for (const s of stacks) {
@@ -192,22 +180,7 @@ for (const s of stacks) {
 }
 console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
 
-const prs = JSON.parse(
-    execFileSync(
-        "gh",
-        [
-            "pr",
-            "list",
-            "--author",
-            "@me",
-            "--limit",
-            "100",
-            "--json",
-            "number,title,url,isDraft,reviews,reviewRequests,headRefName",
-        ],
-        { maxBuffer: 1e8 }
-    )
-)
+const prs = await api.listPrs(root)
 const byBranch = new Map(prs.map((p) => [p.headRefName, p]))
 let prRows = 0
 for (const s of stacks) {
@@ -222,61 +195,51 @@ for (const s of stacks) {
     }
 }
 console.log(`ok: ${prRows} pr rows`)
-;(async () => {
-    // the biggest branch, so the row builders get a real workout
-    const branch = stacks
-        .flatMap((s) => s.branches)
-        .reduce((a, b) => (b.fileCount > a.fileCount ? b : a))
-    const files = await api.changedFiles(root, branch)
-    const blobs = await api.blobShas(
-        root,
-        branch,
-        files.map((f) => f.file)
-    )
-    const entries = files.map((f) => ({
-        f,
-        branch,
-        blob: blobs.get(f.file) ?? "gone",
-        alsoIn: [],
-    }))
 
-    // review ticks key on the blob, so a changed file must clear its own tick
-    const store = new Map()
-    let rows = entries.map((e) => api.fileItem(e, store, true))
-    const unchecked = rows.filter((r) => r.checkboxState === 0).length
-    for (const r of rows) for (const x of r.review) store.set(x.key, x.blob)
-    rows = entries.map((e) => api.fileItem(e, store, true))
-    const checked = rows.filter((r) => r.checkboxState === 1).length
-    const stale = api.fileItem({ ...entries[0], blob: "0000" }, store, true)
-    console.log(
-        `ok: ${rows.length} file rows — ${unchecked} unchecked, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}`
-    )
+// the biggest branch, so the row builders get a real workout
+const branch = stacks
+    .flatMap((s) => s.branches)
+    .reduce((a, b) => (b.fileCount > a.fileCount ? b : a))
+const entries = (await api.changedFiles(root, branch)).map((f) => ({
+    f,
+    branch,
+    blob: f.blob,
+    alsoIn: [],
+}))
 
-    const groups = api.groupsOf(entries)
-    const singles = groups.filter((g) => g.files.length === 1)
-    const groupRows = groups
-        .filter((g) => g.files.length > 1)
-        .map(api.groupItem)
-    const covered =
-        groupRows.reduce((n, r) => n + r.group.length, 0) + singles.length
-    const longestLabel = Math.max(...groupRows.map((r) => r.label.length))
-    const longestPath = Math.max(...groups.map((g) => g.dir.length))
-    console.log(
-        `ok: ${groupRows.length} groups + ${singles.length} promoted singletons covering ${covered}/${entries.length} files; longest label ${longestLabel} chars vs longest path ${longestPath}; groups carry no checkbox (${groupRows[0].checkboxState === undefined ? "confirmed" : "STILL SET (bug)"})`
-    )
+// review ticks key on the blob, so a changed file must clear its own tick
+const store = new Map()
+let rows = entries.map((e) => api.fileItem(e, store, true))
+const unchecked = rows.filter((r) => r.checkboxState === 0).length
+for (const r of rows) for (const x of r.review) store.set(x.key, x.blob)
+rows = entries.map((e) => api.fileItem(e, store, true))
+const checked = rows.filter((r) => r.checkboxState === 1).length
+const stale = api.fileItem({ ...entries[0], blob: "0000" }, store, true)
+console.log(
+    `ok: ${rows.length} file rows — ${unchecked} unchecked, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}`
+)
 
-    // a per-branch override beats the setting; nothing else has a say
-    const a = { name: "a", fileCount: 64 }
-    const b = { name: "b", fileCount: 3 }
-    const dflt = [api.layoutFor(a, overrides), api.layoutFor(b, overrides)]
-    overrides.set(api.layoutKey(a), "group")
-    const overridden = [api.layoutFor(a, overrides), api.layoutFor(b, overrides)]
-    console.log(
-        `ok: layout — default gives ${dflt.join("/")} regardless of size, override gives ${overridden.join("/")}`
-    )
+const groups = api.groupsOf(entries)
+const singles = groups.filter((g) => g.files.length === 1)
+const groupRows = groups.filter((g) => g.files.length > 1).map(api.groupItem)
+const covered =
+    groupRows.reduce((n, r) => n + r.group.length, 0) + singles.length
+console.log(
+    `ok: ${groupRows.length} groups + ${singles.length} promoted singletons covering ${covered}/${entries.length} files; groups carry no checkbox (${groupRows[0].checkboxState === undefined ? "confirmed" : "STILL SET (bug)"})`
+)
 
-    console.log(`\n▾ ${branch.name} — grouped`)
-    for (const r of groupRows.slice(0, 8))
-        console.log(`     ${String(r.label).padEnd(18)} ${r.description}`)
-    if (groupRows.length > 8) console.log(`     … ${groupRows.length - 8} more`)
+// a per-branch override beats the setting; nothing else has a say
+const a = { name: "a" }
+const b = { name: "b" }
+const dflt = [api.layoutFor(a, overrides), api.layoutFor(b, overrides)]
+overrides.set(api.layoutKey(a), "group")
+const overridden = [api.layoutFor(a, overrides), api.layoutFor(b, overrides)]
+console.log(
+    `ok: layout — default gives ${dflt.join("/")}, override gives ${overridden.join("/")}`
+)
+
+console.log(`\n▾ ${branch.name} — grouped`)
+for (const r of groupRows.slice(0, 8))
+    console.log(`     ${String(r.label).padEnd(18)} ${r.description}`)
+if (groupRows.length > 8) console.log(`     … ${groupRows.length - 8} more`)
 })()

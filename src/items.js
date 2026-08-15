@@ -139,7 +139,6 @@ function branchItem(branch, overrides) {
             `Compared against \`${branch.base}\``,
             ci.label ?? "",
             ...ci.failing.map((c) => `- ✗ ${c}`),
-            `Compared against \`${branch.base}\``,
             "",
             ...branch.subjects.map((s) => `- ${s}`),
         ]
@@ -238,7 +237,8 @@ function prItem(row) {
 
     // branch names are short and scannable; the PR title is the elaboration
     const item = new vscode.TreeItem(branch.name)
-    item.resourceUri = uri(PR, String(pr.number), summary)
+    // the circle itself is the badge; the tooltip below is what names it
+    item.resourceUri = uri(PR, String(pr.number), circle)
     item.description = pr.title
     // shape and colour both say draft-or-open, GitHub's own convention, so the
     // two are told apart at a glance rather than by squinting at the glyph
@@ -270,4 +270,4 @@ function prItem(row) {
     return item
 }
 
-module.exports = { BASE, FILE, PR, DECORATION, LETTER, unanchoredGroupItem, commitGroupItem, dirtyFileItem, stackItem, branchItem, groupItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, PR, DECORATION, unanchoredGroupItem, commitGroupItem, dirtyFileItem, stackItem, branchItem, groupItem, fileItem, prStackItem, prItem }

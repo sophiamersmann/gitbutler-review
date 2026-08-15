@@ -1,28 +1,40 @@
 // The three TreeDataProviders. Each one fetches, then hands rows to items.js.
 
 const vscode = require("vscode")
-const { stacksOf, status, uncommittedPlan } = require("./but")
-const { repoRoot, run } = require("./exec")
-const { blobShas, branchFiles, changedFiles, contaminated, overlapMap } = require("./git")
+const { listPrs, stacksOf, status, uncommittedPlan } = require("./but")
+const { repoRoot } = require("./exec")
+const { branchFiles, changedFiles, contaminated, overlapMap } = require("./git")
 const { branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, prItem, prStackItem, stackItem, unanchoredGroupItem } = require("./items")
 const { groupsOf, layoutFor } = require("./model")
 
-class BranchTree {
-    constructor(reviewed, overrides) {
-        this.reviewed = reviewed
-        this.overrides = overrides
+/** The boilerplate every provider needs: rows are TreeItems already, so
+ *  getTreeItem is the identity, and refreshing is one event. */
+class Tree {
+    constructor() {
         this.changed = new vscode.EventEmitter()
         this.onDidChangeTreeData = this.changed.event
-        this.overlap = undefined
     }
 
     refresh() {
-        this.overlap = undefined // recomputed on next expand
         this.changed.fire()
     }
 
     getTreeItem(node) {
         return node
+    }
+}
+
+class BranchTree extends Tree {
+    constructor(store) {
+        super()
+        // one workspaceState-backed store, two key namespaces
+        this.reviewed = store
+        this.overrides = store
+    }
+
+    refresh() {
+        this.overlap = undefined // recomputed on next expand
+        super.refresh()
     }
 
     async getChildren(node) {
@@ -39,15 +51,10 @@ class BranchTree {
                 changedFiles(root, node.branch),
                 contaminated(root, node.branch),
             ])
-            const blobs = await blobShas(
-                root,
-                node.branch,
-                files.map((f) => f.file)
-            )
             const entries = files.map((f) => ({
                 f,
                 branch: node.branch,
-                blob: blobs.get(f.file) ?? "gone",
+                blob: f.blob,
                 // names come from the overlap map, but only for files that
                 // actually carry someone else's hunks
                 alsoIn: dirty.has(f.file)
@@ -94,21 +101,7 @@ class BranchTree {
 
 /** Pending edits are a different mode from browsing branches — an inbox wanting
  *  decisions, not a surface to scan — so they get their own view. */
-class UncommittedTree {
-    constructor(view) {
-        this.changed = new vscode.EventEmitter()
-        this.onDidChangeTreeData = this.changed.event
-        this.view = view
-    }
-
-    refresh() {
-        this.changed.fire()
-    }
-
-    getTreeItem(node) {
-        return node
-    }
-
+class UncommittedTree extends Tree {
     async getChildren(node) {
         const root = repoRoot()
         if (!root) return []
@@ -119,7 +112,6 @@ class UncommittedTree {
             if (node) return []
 
             const plan = await uncommittedPlan(root, await status(root))
-            this.plan = plan
             const anchored = plan.groups.reduce((n, g) => n + g.files.length, 0)
             this.view.description = plan.unanchored.length
                 ? `${anchored} anchored, ${plan.unanchored.length} unanchored`
@@ -140,19 +132,10 @@ class UncommittedTree {
 /** Applied branches with an open PR, grouped by stack — the one thing the
  *  GitHub extension cannot show, since it has no idea stacks exist. Lazy and
  *  separately refreshed: `gh` is network, unlike everything else here. */
-class PrTree {
-    constructor() {
-        this.changed = new vscode.EventEmitter()
-        this.onDidChangeTreeData = this.changed.event
-    }
-
+class PrTree extends Tree {
     refresh() {
         this.cache = undefined
-        this.changed.fire()
-    }
-
-    getTreeItem(node) {
-        return node
+        super.refresh()
     }
 
     async getChildren(node) {
@@ -161,19 +144,11 @@ class PrTree {
         if (node) return node.prs?.map(prItem) ?? []
         try {
             const stacks = stacksOf(await status(root))
-            // one call for every PR; per-PR lookups would be ~1s each
             const byBranch = new Map(
-                (this.cache ??= JSON.parse(
-                    await run(
-                        "gh",
-                        [
-                            "pr", "list", "--author", "@me", "--limit", "100",
-                            "--json",
-                            "number,title,url,isDraft,reviews,reviewRequests,headRefName",
-                        ],
-                        root
-                    )
-                )).map((p) => [p.headRefName, p])
+                (this.cache ??= await listPrs(root)).map((p) => [
+                    p.headRefName,
+                    p,
+                ])
             )
 
             const rows = []

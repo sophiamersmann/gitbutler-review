@@ -1,4 +1,5 @@
-// Everything asked of the `but` CLI, plus the shapes derived straight from it.
+// Everything asked of the `but` and `gh` CLIs, plus the shapes derived straight
+// from what they return.
 
 const { run } = require("./exec")
 const { isDemoted } = require("./model")
@@ -27,27 +28,24 @@ function status(root) {
 function stacksOf(st) {
     return st.stacks
         .map((stack, lane) => ({
-        cliId: stack.cliId,
-        primary: lane === 0,
-        activity: stack.branches
-            .flatMap((b) => b.commits.map((c) => c.createdAt))
-            .sort()
-            .pop(),
-        branches: stack.branches.map((b, i) => ({
-            name: b.name,
-            base: stack.branches[i + 1]?.name ?? st.mergeBase.commitId,
-            pr: b.reviewId?.replace(/[()]/g, ""),
-            passing: b.ci?.passingCheckTitles ?? [],
-            pending: b.ci?.pendingCheckTitles ?? [],
-            failing: b.ci?.failingCheckTitles ?? [],
-            subjects: b.commits.map((c) => c.message.split("\n")[0]),
-            latest: b.commits[0]?.createdAt,
-        })),
-    }))
-        .map((stack) => ({
-            ...stack,
+            cliId: stack.cliId,
+            primary: lane === 0,
             // a stack of nothing but docs is never the thing you came here for
             demoted: stack.branches.every((b) => isDemoted(b.name)),
+            activity: stack.branches
+                .flatMap((b) => b.commits.map((c) => c.createdAt))
+                .sort()
+                .pop(),
+            branches: stack.branches.map((b, i) => ({
+                name: b.name,
+                base: stack.branches[i + 1]?.name ?? st.mergeBase.commitId,
+                pr: b.reviewId?.replace(/[()]/g, ""),
+                passing: b.ci?.passingCheckTitles ?? [],
+                pending: b.ci?.pendingCheckTitles ?? [],
+                failing: b.ci?.failingCheckTitles ?? [],
+                subjects: b.commits.map((c) => c.message.split("\n")[0]),
+                latest: b.commits[0]?.createdAt,
+            })),
         }))
         .sort(
             (a, b) =>
@@ -85,9 +83,14 @@ async function fileReasons(root, changes) {
  *  and so must not be filed under a branch as if they belonged to it. */
 async function uncommittedPlan(root, st) {
     const changes = st.uncommittedChanges
+    // With a single applied branch there is nowhere else a change could go, so
+    // "unanchored" would be noise that teaches you to ignore the warning — and
+    // the per-file plans that decide it are one `but` process each, so don't
+    // ask when the answer can't matter.
+    const ambiguous = st.stacks.flatMap((s) => s.branches).length > 1
     const [batch, reasons] = await Promise.all([
         absorbPlan(root),
-        fileReasons(root, changes),
+        ambiguous ? fileReasons(root, changes) : new Map(),
     ])
 
     const commitMeta = new Map()
@@ -96,10 +99,6 @@ async function uncommittedPlan(root, st) {
             for (const c of b.commits)
                 commitMeta.set(c.commitId, { branch: b.name, cliId: c.cliId })
     const changeOf = new Map(changes.map((c) => [c.filePath, c]))
-
-    // With a single applied branch there is nowhere else a change could go, so
-    // "unanchored" would be noise that teaches you to ignore the warning.
-    const ambiguous = st.stacks.flatMap((s) => s.branches).length > 1
 
     const groups = []
     const unanchored = []
@@ -122,4 +121,19 @@ async function uncommittedPlan(root, st) {
     return { groups, unanchored, total: batch.total_files }
 }
 
-module.exports = { status, stacksOf, absorbPlan, fileReasons, uncommittedPlan }
+/** Every open PR of yours, in one call — per-branch lookups would be ~1s each.
+ *  The only network call in the extension, so the caller decides when. */
+const listPrs = async (root) =>
+    JSON.parse(
+        await run(
+            "gh",
+            [
+                "pr", "list", "--author", "@me", "--limit", "100",
+                "--json",
+                "number,title,url,isDraft,reviews,reviewRequests,headRefName",
+            ],
+            root
+        )
+    )
+
+module.exports = { status, stacksOf, uncommittedPlan, listPrs }

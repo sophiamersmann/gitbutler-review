@@ -8,42 +8,46 @@ const { run } = require("./exec")
 // Used as the right-hand side for files that no longer exist.
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
-const filesOf = async (root, branch) =>
+const diffNames = async (root, a, b) =>
     (
         await run(
             "git",
-            ["diff", "--no-ext-diff", "--name-only", "--no-renames", branch.base, branch.name, "--"],
+            ["diff", "--no-ext-diff", "--name-only", "--no-renames", a, b, "--"],
             root
         )
     )
         .split("\n")
         .filter(Boolean)
 
-/** Changed files with their status letter and churn. */
+/** Changed files with their status letter, churn, and blob SHA at the branch
+ *  tip. One call: --raw carries the status and the blob, --numstat the churn,
+ *  and git prints the two sections one after the other. --no-renames keeps the
+ *  paths plain, so they zip. Keying "reviewed" on the blob means a tick
+ *  survives a reload but clears itself the moment the branch's version of that
+ *  file changes — which is exactly what absorbing an edit does. */
 async function changedFiles(root, branch) {
-    // --no-renames keeps paths plain in both outputs, so they zip by path
-    const args = ["diff", "--no-ext-diff", "--no-renames", branch.base, branch.name, "--"]
-    const [numstat, nameStatus] = await Promise.all([
-        run("git", [...args.slice(0, -1), "--numstat", "--"], root),
-        run("git", [...args.slice(0, -1), "--name-status", "--"], root),
-    ])
-
-    const churn = new Map(
-        numstat
-            .split("\n")
-            .filter(Boolean)
-            .map((l) => {
-                const [adds, dels, file] = l.split("\t")
-                return [file, { adds, dels }]
-            })
+    const out = await run(
+        "git",
+        ["diff", "--no-ext-diff", "--no-renames", "--raw", "--abbrev=40", "--numstat", branch.base, branch.name, "--"],
+        root
     )
-    return nameStatus
-        .split("\n")
-        .filter(Boolean)
-        .map((l) => {
-            const [st, file] = l.split("\t")
-            return { file, status: st[0], ...churn.get(file) }
-        })
+    const files = []
+    const churn = new Map()
+    for (const line of out.split("\n")) {
+        if (!line) continue
+        if (line[0] === ":") {
+            // :<srcmode> <dstmode> <srcsha> <dstsha> <status>\t<path>
+            const [meta, file] = line.split("\t")
+            const [, , , blob, status] = meta.split(" ")
+            // a deleted file's dst sha is all zeros — a stable sentinel, and
+            // the tick only ever compares blobs for equality
+            files.push({ file, status: status[0], blob })
+        } else {
+            const [adds, dels, file] = line.split("\t")
+            churn.set(file, { adds, dels })
+        }
+    }
+    return files.map((f) => ({ ...f, ...churn.get(f.file) }))
 }
 
 /** Lines in the workspace copy of a file that this branch did NOT put there —
@@ -76,38 +80,7 @@ async function foreignRanges(root, branch, file) {
  *  other branch touch this path" instead over-reports badly: a branch *below*
  *  yours has its changes in the base too, so they cancel out of the diff. */
 const contaminated = async (root, branch) =>
-    new Set(
-        (
-            await run(
-                "git",
-                ["diff", "--no-ext-diff", "--name-only", "--no-renames", branch.name, "HEAD", "--"],
-                root
-            )
-        )
-            .split("\n")
-            .filter(Boolean)
-    )
-
-/** file -> its blob SHA at the branch tip. Keying "reviewed" on the blob means
- *  a tick survives a reload but clears itself the moment the branch's version of
- *  that file changes — which is exactly what absorbing an edit does. */
-async function blobShas(root, branch, files) {
-    if (!files.length) return new Map()
-    const out = await run(
-        "git",
-        ["ls-tree", "-z", branch.name, "--", ...files],
-        root
-    )
-    return new Map(
-        out
-            .split("\0")
-            .filter(Boolean)
-            .map((rec) => {
-                const [meta, file] = rec.split("\t")
-                return [file, meta.split(/\s+/)[2]]
-            })
-    )
-}
+    new Set(await diffNames(root, branch.name, "HEAD"))
 
 /** branch name -> the files it changes. One pass, reused for both the row's
  *  file count and the cross-branch overlap check. */
@@ -115,7 +88,7 @@ async function branchFiles(root, stacks) {
     const all = stacks.flatMap((s) => s.branches)
     return new Map(
         await Promise.all(
-            all.map(async (b) => [b.name, await filesOf(root, b)])
+            all.map(async (b) => [b.name, await diffNames(root, b.base, b.name)])
         )
     )
 }
@@ -130,4 +103,4 @@ function overlapMap(files) {
     return map
 }
 
-module.exports = { EMPTY_TREE, filesOf, changedFiles, foreignRanges, contaminated, blobShas, branchFiles, overlapMap }
+module.exports = { EMPTY_TREE, changedFiles, foreignRanges, contaminated, branchFiles, overlapMap }

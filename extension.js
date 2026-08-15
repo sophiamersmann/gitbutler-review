@@ -6,18 +6,17 @@ const { status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, foreignRanges } = require("./src/git")
 const { BASE, DECORATION, FILE, PR } = require("./src/items")
-const { ROLLUP, layoutKey } = require("./src/model")
+const { layoutKey } = require("./src/model")
 const { BranchTree, PrTree, UncommittedTree } = require("./src/trees")
 
 function activate(context) {
-    // workspaceState, so ticks are per-repo and survive a reload
-    const memento = {
+    // workspaceState, so ticks and layout overrides are per-repo and survive a
+    // reload
+    const store = {
         get: (k) => context.workspaceState.get(k),
         set: (k, v) => context.workspaceState.update(k, v),
     }
-    const reviewed = memento
-    const overrides = memento
-    const tree = new BranchTree(reviewed, overrides)
+    const tree = new BranchTree(store)
     const prs = new PrTree()
     const branchView = vscode.window.createTreeView("butReview.branches", {
         treeDataProvider: tree,
@@ -45,8 +44,8 @@ function activate(context) {
         )
     }
 
-    const openDiff = (left, right, title) =>
-        vscode.commands.executeCommand("vscode.diff", left, right, title)
+    const openDiff = (left, right, title, opts) =>
+        vscode.commands.executeCommand("vscode.diff", left, right, title, opts)
 
     // The diff editor already owns the background channel, so the marker lives
     // in opacity, a left rail and the ruler instead — see foreignRanges above.
@@ -64,11 +63,19 @@ function activate(context) {
      *  recomputed after an absorb rather than showing stale dimming */
     const marked = new Map()
 
+    // Only what's on screen: paint() can't use the rest, and `marked` keeps
+    // every diff opened this session.
     const repaintOpen = async () => {
         const root = repoRoot()
         if (!root) return
+        const visible = new Set(
+            vscode.window.visibleTextEditors.map((e) =>
+                e.document.uri.toString()
+            )
+        )
+        const onScreen = [...marked].filter(([key]) => visible.has(key))
         await Promise.all(
-            [...marked].map(async ([key, m]) => {
+            onScreen.map(async ([key, m]) => {
                 const ranges = await foreignRanges(root, m.branch, m.file).catch(
                     () => []
                 )
@@ -115,10 +122,8 @@ function activate(context) {
         // Scoped to our own scheme, so the Explorer's decorations are untouched.
         vscode.window.registerFileDecorationProvider({
             provideFileDecoration: (u) => {
-                if (u.scheme === PR) {
-                    const hit = ROLLUP.find(([, name]) => name === u.query)
-                    return hit && { badge: hit[0], tooltip: hit[1] }
-                }
+                // the PR row carries its own circle; its tooltip names it
+                if (u.scheme === PR) return { badge: u.query }
                 if (u.scheme !== FILE) return
                 const [badge, color] = DECORATION[u.query[0]] ?? []
                 if (!badge) return
@@ -135,7 +140,7 @@ function activate(context) {
         branchView.onDidChangeCheckboxState(({ items }) => {
             for (const [item, state] of items)
                 for (const { key, blob } of item.review ?? [])
-                    reviewed.set(
+                    store.set(
                         key,
                         state === vscode.TreeItemCheckboxState.Checked
                             ? blob
@@ -168,7 +173,7 @@ function activate(context) {
                     // toggling back to the setting's value clears the override
                     // rather than pinning the branch to it
                     const isDefault = mode === cfg().get("fileLayout", "list")
-                    overrides.set(
+                    store.set(
                         layoutKey(node.branch),
                         isDefault ? undefined : mode
                     )
@@ -233,18 +238,16 @@ function activate(context) {
                     c.changeType === "deleted"
                         ? uri(BASE, c.filePath, EMPTY_TREE)
                         : vscode.Uri.file(path.join(repoRoot(), c.filePath))
+                // vscode.diff takes TextDocumentShowOptions, and a selection
+                // both scrolls the pane there and puts the cursor on it
                 await openDiff(
                     uri(BASE, c.filePath, "HEAD"),
                     right,
-                    `${path.basename(c.filePath)} — uncommitted`
+                    `${path.basename(c.filePath)} — uncommitted`,
+                    line
+                        ? { selection: new vscode.Range(line - 1, 0, line - 1, 0) }
+                        : undefined
                 )
-                if (!line) return
-                const editor = vscode.window.visibleTextEditors.find(
-                    (e) => e.document.uri.toString() === right.toString()
-                )
-                const at = new vscode.Range(line - 1, 0, line - 1, 0)
-                editor?.revealRange(at, vscode.TextEditorRevealType.InCenter)
-                if (editor) editor.selection = new vscode.Selection(at.start, at.start)
             }
         ),
 
