@@ -1022,12 +1022,13 @@ function activate(context) {
             vscode.env.openExternal(vscode.Uri.parse(url))
         ),
 
-        // one button for all three views. Automatic refreshes stay out of the
-        // PR view, since that one costs a network round trip.
-        vscode.commands.registerCommand("butReview.refresh", () => {
-            refreshAll()
+        // local state and GitHub refresh separately: one is a handful of git
+        // calls, the other a network round trip
+        vscode.commands.registerCommand("butReview.refresh", refreshAll),
+
+        vscode.commands.registerCommand("butReview.refreshPrs", () =>
             prs.refresh()
-        }),
+        ),
 
         // per branch, not global: layout is a property of how big a branch is,
         // and a title-bar button could only ever mean "all of them"
@@ -1117,6 +1118,46 @@ function activate(context) {
                 if (editor) editor.selection = new vscode.Selection(at.start, at.start)
             }
         ),
+
+        vscode.commands.registerCommand("butReview.absorb", async () => {
+            try {
+                const root = repoRoot()
+                if (!root) throw new Error("no folder open")
+
+                const plan = await uncommittedPlan(root, await status(root))
+                if (!plan.total)
+                    return vscode.window.showInformationMessage(
+                        "Nothing to absorb."
+                    )
+
+                // Absorbing the anchored files one at a time would rewrite
+                // history between calls and shift the rest, so make the user
+                // place these first and keep the real absorb one atomic call.
+                if (plan.unanchored.length)
+                    return vscode.window.showWarningMessage(
+                        `${plan.unanchored.length} change${plan.unanchored.length > 1 ? "s have" : " has"} no commit to absorb into.`,
+                        {
+                            modal: true,
+                            detail: `Place ${plan.unanchored.length > 1 ? "them" : "it"} first with "Amend Into\u2026" on the row.\n\n${plan.unanchored
+                                .map(
+                                    (r) =>
+                                        `    ${r.path}  \u2192  would default to ${r.meta.branch}`
+                                )
+                                .join("\n")}`,
+                        }
+                    )
+
+                const files = plan.total
+                const commits = plan.groups.length
+                await run("but", ["absorb"], root)
+                refreshAll()
+                vscode.window.showInformationMessage(
+                    `Absorbed ${files} file${files > 1 ? "s" : ""} into ${commits} commit${commits > 1 ? "s" : ""}. \`but undo\` reverses it.`
+                )
+            } catch (e) {
+                vscode.window.showErrorMessage(`but-review: ${e.message}`)
+            }
+        }),
 
         vscode.commands.registerCommand("butReview.amendInto", async (node) => {
             try {

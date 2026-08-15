@@ -2,7 +2,7 @@
     "name": "but-review",
     "displayName": "GitButler Review",
     "description": "Review GitButler stacks, place uncommitted changes, and track their pull requests",
-    "version": "0.9.0",
+    "version": "0.9.1",
     "publisher": "sophiamersmann",
     "engines": {
         "vscode": "^1.90.0"
@@ -128,6 +128,12 @@
                 "title": "Group by Directory",
                 "category": "GitButler Review",
                 "icon": "$(list-tree)"
+            },
+            {
+                "command": "butReview.refreshPrs",
+                "title": "Refresh Pull Requests",
+                "category": "GitButler Review",
+                "icon": "$(refresh)"
             }
         ],
         "menus": {
@@ -166,6 +172,11 @@
                 {
                     "command": "butReview.refresh",
                     "when": "view == butReview.branches",
+                    "group": "navigation"
+                },
+                {
+                    "command": "butReview.refreshPrs",
+                    "when": "view == butReview.prs",
                     "group": "navigation"
                 }
             ],
