@@ -1041,16 +1041,17 @@ function activate(context) {
             vscode.commands.registerCommand(
                 `butReview.viewAs${mode[0].toUpperCase()}${mode.slice(1)}`,
                 (node) => {
-                    overrides.set(layoutKey(node.branch), mode)
+                    // toggling back to the setting's value clears the override
+                    // rather than pinning the branch to it
+                    const isDefault = mode === cfg().get("fileLayout", "list")
+                    overrides.set(
+                        layoutKey(node.branch),
+                        isDefault ? undefined : mode
+                    )
                     tree.refresh()
                 }
             )
         ),
-
-        vscode.commands.registerCommand("butReview.viewAsDefault", (node) => {
-            overrides.set(layoutKey(node.branch), undefined)
-            tree.refresh()
-        }),
 
         vscode.window.onDidChangeVisibleTextEditors(paint),
 

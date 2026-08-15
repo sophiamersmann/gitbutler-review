@@ -40,8 +40,8 @@ have to expand. Otherwise a group's label is the directory's last segment with t
 in grey beside it — in a monorepo the part that tells directories apart sits at the end of a long
 shared prefix, and the panel clips from the end.
 
-Layout is chosen per branch — an icon on the branch row, or its context menu — so a
-sprawling refactor can be grouped while a three-file fix stays a list.
+Layout is chosen per branch, from an icon on the branch row, so a sprawling refactor can
+be grouped while a three-file fix stays a list.
 `butReview.fileLayout` sets the default for branches you haven't chosen for.
 
 Because the right-hand pane is the *workspace* file rather than the branch tip, other
