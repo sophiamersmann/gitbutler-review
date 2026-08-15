@@ -2,7 +2,7 @@
     "name": "but-review",
     "displayName": "GitButler Review",
     "description": "Review GitButler stacks, place uncommitted changes, and track their pull requests",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "publisher": "sophiamersmann",
     "engines": {
         "vscode": "^1.90.0"
@@ -263,17 +263,15 @@
                 "butReview.fileLayout": {
                     "type": "string",
                     "enum": [
-                        "auto",
                         "list",
                         "group"
                     ],
-                    "default": "auto",
+                    "default": "list",
                     "enumDescriptions": [
-                        "Flat list for small branches, grouped by directory for large ones",
-                        "Always a flat list",
-                        "Always grouped by directory"
+                        "A flat list of files",
+                        "Grouped by directory"
                     ],
-                    "markdownDescription": "Default layout for a branch's changed files. `auto` groups above 10 files. Override per branch from the branch's context menu."
+                    "markdownDescription": "Default layout for a branch's changed files. Override per branch from the branch row."
                 }
             }
         }

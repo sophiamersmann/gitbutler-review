@@ -35,15 +35,14 @@ Ticks are stored per repo and keyed on the file's blob SHA at the branch tip, so
 survive a reload but clear themselves as soon as the branch's version of that file
 changes — absorbing an edit into a file you had already reviewed un-ticks it.
 
-Files are shown as a flat list, or grouped by directory once there are enough of them to
-warrant it. A directory holding a single file stays a plain row rather than becoming a group you
+Files are shown as a flat list, or grouped by directory when you ask for it. A directory holding a single file stays a plain row rather than becoming a group you
 have to expand. Otherwise a group's label is the directory's last segment with the parent
 in grey beside it — in a monorepo the part that tells directories apart sits at the end of a long
 shared prefix, and the panel clips from the end.
 
 Layout is chosen per branch — an icon on the branch row, or its context menu — so a
-sprawling refactor can be grouped while a three-file fix stays a list. `butReview.fileLayout` sets the default
-for branches you haven't chosen for.
+sprawling refactor can be grouped while a three-file fix stays a list.
+`butReview.fileLayout` sets the default for branches you haven't chosen for.
 
 Because the right-hand pane is the *workspace* file rather than the branch tip, other
 applied branches can contribute hunks to it. Those lines are dimmed with a left rail and
@@ -79,7 +78,7 @@ or `gh` live elsewhere.
 | --- | --- | --- |
 | `butReview.ignoredChecks` | `[]` | CI checks to exclude from a branch's status, matched as case-insensitive substrings. Useful for a slow or flaky job you never act on. |
 | `butReview.botReviewers` | Codex, github-actions, Copilot | Reviewers whose approvals don't count. Logins ending in `[bot]` are always ignored; Codex reviews as `chatgpt-codex-connector`, with no such suffix, which is why this list exists. |
-| `butReview.fileLayout` | `auto` | `list`, `group`, or `auto` — a flat list below 10 changed files, grouped by directory above. Overridable per branch from its context menu. |
+| `butReview.fileLayout` | `list` | `list` or `group`. Overridable per branch from the branch row. |
 | `butReview.demoteBranches` | `["docs"]` | Stacks whose every branch matches one of these tokens sort to the bottom regardless of activity. |
 
 Five theme colours are contributed under `butReview.*` if you want to retune the icons or

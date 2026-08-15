@@ -184,18 +184,14 @@ console.log(`ok: ${prRows} pr rows`)
         `ok: ${groupRows.length} groups + ${singles.length} promoted singletons covering ${covered}/${entries.length} files; longest label ${longestLabel} chars vs longest path ${longestPath}; groups carry no checkbox (${groupRows[0].checkboxState === undefined ? "confirmed" : "STILL SET (bug)"})`
     )
 
-    // per-branch override beats the setting, which beats size
-    const big = { name: "big", fileCount: 64 }
-    const small = { name: "small", fileCount: 3 }
-    const auto = [api.layoutFor(big, overrides), api.layoutFor(small, overrides)]
-    overrides.set(api.layoutKey(big), "list")
-    overrides.set(api.layoutKey(small), "group")
-    const forced = [
-        api.layoutFor(big, overrides),
-        api.layoutFor(small, overrides),
-    ]
+    // a per-branch override beats the setting; nothing else has a say
+    const a = { name: "a", fileCount: 64 }
+    const b = { name: "b", fileCount: 3 }
+    const dflt = [api.layoutFor(a, overrides), api.layoutFor(b, overrides)]
+    overrides.set(api.layoutKey(a), "group")
+    const overridden = [api.layoutFor(a, overrides), api.layoutFor(b, overrides)]
     console.log(
-        `ok: layout — auto gives ${auto.join("/")} for 64/3 files, overrides give ${forced.join("/")}`
+        `ok: layout — default gives ${dflt.join("/")} regardless of size, override gives ${overridden.join("/")}`
     )
 
     console.log(`\n▾ ${branch.name} — grouped`)

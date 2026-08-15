@@ -685,18 +685,12 @@ function branchItem(branch, overrides) {
 
 const reviewKey = (branch, file) => `reviewed:${branch.name}:${file}`
 
-const AUTO_GROUP_THRESHOLD = 10
-
 const layoutKey = (branch) => `layout:${branch.name}`
 
-/** list | group. A per-branch choice beats the setting, which beats size — so
- *  the setting stays the default and an override is visibly an exception. */
+/** A per-branch choice, else the setting. No size heuristic: guessing was one
+ *  mechanism too many next to a toggle that takes one click. */
 function layoutFor(branch, overrides) {
-    const chosen = overrides?.get(layoutKey(branch))
-    if (chosen) return chosen
-    const setting = cfg().get("fileLayout", "auto")
-    if (setting !== "auto") return setting
-    return (branch.fileCount ?? 0) > AUTO_GROUP_THRESHOLD ? "group" : "list"
+    return overrides?.get(layoutKey(branch)) ?? cfg().get("fileLayout", "list")
 }
 
 /** One row per directory, sorted by full path so siblings stay adjacent. The
