@@ -103,6 +103,19 @@ Run it after touching anything.
 
 There is no build step — it's plain JS loaded directly.
 
+```
+extension.js      wiring: providers, decorations, commands
+src/exec.js       subprocess plumbing
+src/git.js        everything asked of git
+src/but.js        everything asked of the `but` CLI
+src/model.js      pure derivations — CI, reviews, stack names, layout
+src/items.js      every TreeItem the views render
+src/trees.js      the three TreeDataProviders
+```
+
+Dependencies point one way, `exec` at the bottom and `extension` at the top, so no
+module reaches back up.
+
 **Reloading:** `Developer: Reload Window` re-reads `extension.js`; the version number does
 not need bumping. The **icon** is the exception — Electron caches it by path, so changing
 `icon-*.svg` requires renaming the file and updating the manifest.

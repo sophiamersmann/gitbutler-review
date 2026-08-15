@@ -65,7 +65,13 @@ const stub = {
 // The seam JS testing can't see: a command declared but never registered renders
 // as a working button bound to nothing, which is how the absorb button sat dead
 // for four commits. Cheap, needs no repo, so it runs first.
-const src = fs.readFileSync(path.join(__dirname, "extension.js"), "utf8")
+const sources = [
+    path.join(__dirname, "extension.js"),
+    ...fs
+        .readdirSync(path.join(__dirname, "src"))
+        .map((f) => path.join(__dirname, "src", f)),
+]
+const src = sources.map((f) => fs.readFileSync(f, "utf8")).join("\n")
 const manifest = JSON.parse(
     fs.readFileSync(path.join(__dirname, "package.json"), "utf8")
 )
@@ -132,14 +138,18 @@ if (problems.length) {
     )
 }
 
-const api = new Function(
-    "require",
-    "module",
-    "exports",
-    src +
-        ";return {branchItem,stackItem,stacksOf,prItem,prStackItem,fileItem," +
-        "groupItem,groupsOf,blobShas,changedFiles,layoutFor,layoutKey}"
-)((r) => (r === "vscode" ? stub : require(r)), { exports: {} }, {})
+const Module = require("module")
+const load = Module._load
+Module._load = function (request, ...rest) {
+    return request === "vscode" ? stub : load.call(this, request, ...rest)
+}
+
+const api = {
+    ...require("./src/but"),
+    ...require("./src/git"),
+    ...require("./src/model"),
+    ...require("./src/items"),
+}
 
 const git = (...args) => execFileSync("git", args, { maxBuffer: 1e8 }).toString()
 
