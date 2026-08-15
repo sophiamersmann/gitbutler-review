@@ -1018,15 +1018,16 @@ function activate(context) {
         vscode.window.registerTreeDataProvider("butReview.prs", prs),
         dirtyView,
 
-        vscode.commands.registerCommand("butReview.refreshPrs", () =>
-            prs.refresh()
-        ),
-
         vscode.commands.registerCommand("butReview.openUrl", (url) =>
             vscode.env.openExternal(vscode.Uri.parse(url))
         ),
 
-        vscode.commands.registerCommand("butReview.refresh", refreshAll),
+        // one button for all three views. Automatic refreshes stay out of the
+        // PR view, since that one costs a network round trip.
+        vscode.commands.registerCommand("butReview.refresh", () => {
+            refreshAll()
+            prs.refresh()
+        }),
 
         // per branch, not global: layout is a property of how big a branch is,
         // and a title-bar button could only ever mean "all of them"

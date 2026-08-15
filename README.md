@@ -54,7 +54,8 @@ on. Absorb is blocked until those are placed explicitly, because absorb would ot
 drop them in the primary lane silently, on whatever branch happens to be first.
 
 **Pull Requests** — grouped by stack, which is the thing GitHub's own extension can't show.
-One `gh pr list` call. Review state is computed from the full review history rather than
+One `gh pr list` call, made only when the view is first opened or you hit refresh —
+automatic refreshes leave it alone, since it is the only part that touches the network. Review state is computed from the full review history rather than
 `latestReviews`, and bot reviews are excluded.
 
 ## Install
