@@ -33,6 +33,11 @@ Ticks are stored per repo and keyed on the file's blob SHA at the branch tip, so
 survive a reload but clear themselves as soon as the branch's version of that file
 changes — absorbing an edit into a file you had already reviewed un-ticks it.
 
+Files are laid out as a flat list or a folder tree, switchable from the view's title bar
+and defaulting to whichever suits the branch's size. The tree merges single-child
+directory chains into one row, so a monorepo's deep paths don't turn into four nested
+rows holding one file, and ticking a folder ticks everything beneath it.
+
 Because the right-hand pane is the *workspace* file rather than the branch tip, other
 applied branches can contribute hunks to it. Those lines are dimmed with a left rail and
 ruler marks, and files carrying them are flagged in the tree.
@@ -67,6 +72,7 @@ or `gh` live elsewhere.
 | --- | --- | --- |
 | `butReview.ignoredChecks` | `[]` | CI checks to exclude from a branch's status, matched as case-insensitive substrings. Useful for a slow or flaky job you never act on. |
 | `butReview.botReviewers` | Codex, github-actions, Copilot | Reviewers whose approvals don't count. Logins ending in `[bot]` are always ignored; Codex reviews as `chatgpt-codex-connector`, with no such suffix, which is why this list exists. |
+| `butReview.fileLayout` | `auto` | `list`, `tree`, or `auto` — a flat list below 10 changed files and a folder tree above. |
 | `butReview.demoteBranches` | `["docs"]` | Stacks whose every branch matches one of these tokens sort to the bottom regardless of activity. |
 
 Five theme colours are contributed under `butReview.*` if you want to retune the icons or

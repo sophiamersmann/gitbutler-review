@@ -410,6 +410,7 @@ class BranchTree {
             if (!node) return await this.topLevel(root)
             // top-first, as `but status` and the GitButler app show a stack
             if (node.stack) return node.stack.branches.map((b) => branchItem(b))
+            if (node.folder) return this.rows(node.folder, 0, false)
 
             const [files, dirty] = await Promise.all([
                 changedFiles(root, node.branch),
@@ -420,25 +421,34 @@ class BranchTree {
                 node.branch,
                 files.map((f) => f.file)
             )
-            return files.map((f) =>
-                fileItem(
-                    f,
-                    node.branch,
-                    blobs.get(f.file) ?? "gone",
-                    // names come from the overlap map, but only for files that
-                    // actually carry someone else's hunks
-                    dirty.has(f.file)
-                        ? (this.overlap?.get(f.file) ?? []).filter(
-                              (n) => n !== node.branch.name
-                          )
-                        : [],
-                    this.reviewed
-                )
-            )
+            const entries = files.map((f) => ({
+                f,
+                branch: node.branch,
+                blob: blobs.get(f.file) ?? "gone",
+                // names come from the overlap map, but only for files that
+                // actually carry someone else's hunks
+                alsoIn: dirty.has(f.file)
+                    ? (this.overlap?.get(f.file) ?? []).filter(
+                          (n) => n !== node.branch.name
+                      )
+                    : [],
+            }))
+            return this.rows(buildTree(entries), entries.length)
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
         }
+    }
+
+    /** Folders first, then loose files. `count` only matters at the root, where
+     *  it decides list-versus-tree; below that we are already in a tree. */
+    rows(node, count, root = true) {
+        if (root && layoutFor(count) === "list")
+            return descendants(node).map((e) => fileItem(e, this.reviewed, true))
+        return [
+            ...folders(node).map((d) => folderItem(d, this.reviewed)),
+            ...node.files.map((e) => fileItem(e, this.reviewed, false)),
+        ]
     }
 
     /** A one-branch stack is shown as the branch itself — no pointless wrapper. */
@@ -671,7 +681,78 @@ function branchItem(branch, primary) {
 
 const reviewKey = (branch, file) => `reviewed:${branch.name}:${file}`
 
-function fileItem(f, branch, blob, alsoIn, reviewed) {
+const AUTO_TREE_THRESHOLD = 10
+
+/** list | tree, resolving "auto" by size — a three-file branch as a tree is
+ *  silly, a sixty-file branch as a flat list is what we started with. */
+function layoutFor(count) {
+    const setting = cfg().get("fileLayout", "auto")
+    if (setting === "list" || setting === "tree") return setting
+    return count > AUTO_TREE_THRESHOLD ? "tree" : "list"
+}
+
+/** Nested folders keyed by path segment. */
+function buildTree(entries) {
+    const root = { dirs: new Map(), files: [] }
+    for (const e of entries) {
+        const parts = e.f.file.split("/")
+        parts.pop()
+        let node = root
+        for (const part of parts) {
+            if (!node.dirs.has(part))
+                node.dirs.set(part, { dirs: new Map(), files: [] })
+            node = node.dirs.get(part)
+        }
+        node.files.push(e)
+    }
+    return root
+}
+
+/** Folder rows, with single-child chains merged into one — around half the
+ *  directories in a monorepo hold a single file, and `a/b/c/d` as four nested
+ *  rows is worse than the flat list it replaced. */
+function folders(node) {
+    return [...node.dirs].map(([name, child]) => {
+        let label = name
+        let cur = child
+        while (cur.files.length === 0 && cur.dirs.size === 1) {
+            const [next, grandchild] = [...cur.dirs][0]
+            label += `/${next}`
+            cur = grandchild
+        }
+        return { label, node: cur }
+    })
+}
+
+const descendants = (node) => [
+    ...node.files,
+    ...[...node.dirs.values()].flatMap(descendants),
+]
+
+function folderItem(dir, reviewed) {
+    const kids = descendants(dir.node)
+    const item = new vscode.TreeItem(
+        dir.label,
+        vscode.TreeItemCollapsibleState.Collapsed
+    )
+    item.description = `${kids.length} file${kids.length === 1 ? "" : "s"}`
+    item.iconPath = vscode.ThemeIcon.Folder
+    item.contextValue = "folder"
+    item.folder = dir.node
+    // ticking a folder ticks everything under it — the point of the tree on a
+    // sixty-file branch is not having to click sixty times
+    item.review = kids.map((e) => ({
+        key: reviewKey(e.branch, e.f.file),
+        blob: e.blob,
+    }))
+    item.checkboxState = item.review.every((r) => reviewed?.get(r.key) === r.blob)
+        ? vscode.TreeItemCheckboxState.Checked
+        : vscode.TreeItemCheckboxState.Unchecked
+    return item
+}
+
+function fileItem(entry, reviewed, showDir) {
+    const { f, branch, blob, alsoIn } = entry
     // "!" marks the row as also-changed-elsewhere for the decoration provider
     const item = new vscode.TreeItem(
         uri(FILE, f.file, f.status + (alsoIn.length ? "!" : ""))
@@ -679,8 +760,15 @@ function fileItem(f, branch, blob, alsoIn, reviewed) {
     const churn = f.adds === "-" ? "binary" : `+${f.adds} −${f.dels}` // numstat marks binaries with -
     item.description = [
         churn,
-        alsoIn.length ? `⚠ also in ${alsoIn.join(", ")}` : path.dirname(f.file),
-    ].join("  ·  ")
+        // in tree mode the folder row already says where the file lives
+        alsoIn.length
+            ? `⚠ also in ${alsoIn.join(", ")}`
+            : showDir
+              ? path.dirname(f.file)
+              : "",
+    ]
+        .filter(Boolean)
+        .join("  ·  ")
     item.tooltip = new vscode.MarkdownString(
         [
             `\`${f.file}\``,
@@ -699,7 +787,7 @@ function fileItem(f, branch, blob, alsoIn, reviewed) {
     }
     item.contextValue = "file"
     const key = reviewKey(branch, f.file)
-    item.review = { key, blob }
+    item.review = [{ key, blob }]
     item.checkboxState =
         reviewed?.get(key) === blob
             ? vscode.TreeItemCheckboxState.Checked
@@ -904,7 +992,17 @@ function activate(context) {
         }
     }
 
+    // "auto" reads as list for the button's purposes: it only resolves per
+    // branch, and the title bar has no branch in hand
+    const syncLayoutContext = () =>
+        vscode.commands.executeCommand(
+            "setContext",
+            "butReview.layout",
+            cfg().get("fileLayout", "auto") === "tree" ? "tree" : "list"
+        )
+
     syncVisibility()
+    syncLayoutContext()
 
     function refreshAll() {
         tree.refresh()
@@ -945,13 +1043,14 @@ function activate(context) {
         branchView,
         branchView.onDidChangeCheckboxState(({ items }) => {
             for (const [item, state] of items)
-                if (item.review)
+                for (const { key, blob } of item.review ?? [])
                     reviewed.set(
-                        item.review.key,
+                        key,
                         state === vscode.TreeItemCheckboxState.Checked
-                            ? item.review.blob
+                            ? blob
                             : undefined
                     )
+            tree.refresh() // a folder tick changes every row beneath it
         }),
         vscode.window.registerTreeDataProvider("butReview.prs", prs),
         dirtyView,
@@ -965,6 +1064,21 @@ function activate(context) {
         ),
 
         vscode.commands.registerCommand("butReview.refresh", refreshAll),
+
+        ...["tree", "list"].map((mode) =>
+            vscode.commands.registerCommand(
+                `butReview.viewAs${mode[0].toUpperCase()}${mode.slice(1)}`,
+                async () => {
+                    await cfg().update(
+                        "fileLayout",
+                        mode,
+                        vscode.ConfigurationTarget.Global
+                    )
+                    syncLayoutContext()
+                    tree.refresh()
+                }
+            )
+        ),
 
         vscode.window.onDidChangeVisibleTextEditors(paint),
 

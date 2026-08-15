@@ -2,7 +2,7 @@
     "name": "but-review",
     "displayName": "GitButler Review",
     "description": "Review GitButler stacks, place uncommitted changes, and track their pull requests",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "publisher": "sophiamersmann",
     "engines": {
         "vscode": "^1.90.0"
@@ -128,6 +128,18 @@
                 "command": "butReview.openUrl",
                 "title": "Open Pull Request in Browser",
                 "category": "GitButler Review"
+            },
+            {
+                "command": "butReview.viewAsTree",
+                "title": "View as Tree",
+                "category": "GitButler Review",
+                "icon": "$(list-tree)"
+            },
+            {
+                "command": "butReview.viewAsList",
+                "title": "View as List",
+                "category": "GitButler Review",
+                "icon": "$(list-flat)"
             }
         ],
         "menus": {
@@ -169,6 +181,16 @@
                     "command": "butReview.refreshPrs",
                     "when": "view == butReview.prs",
                     "group": "navigation"
+                },
+                {
+                    "command": "butReview.viewAsTree",
+                    "when": "view == butReview.branches && butReview.layout != tree",
+                    "group": "navigation@0"
+                },
+                {
+                    "command": "butReview.viewAsList",
+                    "when": "view == butReview.branches && butReview.layout == tree",
+                    "group": "navigation@0"
                 }
             ],
             "view/item/context": [
@@ -216,6 +238,21 @@
                         "docs"
                     ],
                     "markdownDescription": "Stacks whose every branch name contains one of these hyphen-separated tokens are sorted to the bottom, whatever their activity. Token match, so `docs` catches `my-docs` but not `docstring-fix`."
+                },
+                "butReview.fileLayout": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "list",
+                        "tree"
+                    ],
+                    "default": "auto",
+                    "enumDescriptions": [
+                        "Flat list for small branches, folder tree for large ones",
+                        "Always a flat list",
+                        "Always a folder tree, with single-child chains merged"
+                    ],
+                    "markdownDescription": "How a branch's changed files are laid out. `auto` switches to a tree above 10 files."
                 }
             }
         }
