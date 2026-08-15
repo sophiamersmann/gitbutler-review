@@ -11,6 +11,7 @@ const stub = {
         }
     },
     TreeItemCollapsibleState: { Collapsed: 1, Expanded: 2 },
+    TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
     ThemeIcon: class {
         constructor(i, c) {
             this.id = i
@@ -62,7 +63,7 @@ const api = new Function(
     "module",
     "exports",
     src +
-        ";return {branchItem,stackItem,stacksOf,ciState,prItem,prStackItem,humanDecision,stackName}"
+        ";return {branchItem,stackItem,stacksOf,ciState,prItem,prStackItem,humanDecision,stackName,fileItem,blobShas,changedFiles}"
 )(
     (r) => (r === "vscode" ? stub : require(r)),
     { exports: {} },
@@ -98,6 +99,33 @@ for (const s of stacks) {
     }
 }
 console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
+
+// file rows exercise the review checkbox, whose state comes from a blob SHA
+;(async () => {
+    // the biggest branch, so the row builder gets a real workout
+    const branch = stacks
+        .flatMap((s) => s.branches)
+        .reduce((a, b) => ((b.fileCount ?? 0) > (a.fileCount ?? 0) ? b : a))
+    const root = process.cwd()
+    const files = await api.changedFiles(root, branch)
+    const blobs = await api.blobShas(root, branch, files.map((f) => f.file))
+    const store = new Map()
+    let rows = files.map((f) =>
+        api.fileItem(f, branch, blobs.get(f.file) ?? "gone", [], store)
+    )
+    const unchecked = rows.filter((r) => r.checkboxState === 0).length
+    // tick them all, then rebuild: they should come back checked
+    for (const r of rows) store.set(r.review.key, r.review.blob)
+    rows = files.map((f) =>
+        api.fileItem(f, branch, blobs.get(f.file) ?? "gone", [], store)
+    )
+    const checked = rows.filter((r) => r.checkboxState === 1).length
+    // a changed blob must clear the tick
+    const stale = api.fileItem(files[0], branch, "0000000", [], store)
+    console.log(
+        `ok: ${rows.length} file rows — ${unchecked} unchecked initially, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}`
+    )
+})()
 
 const prs = JSON.parse(
     execFileSync(

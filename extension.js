@@ -275,6 +275,27 @@ const contaminated = async (root, branch) =>
             .filter(Boolean)
     )
 
+/** file -> its blob SHA at the branch tip. Keying "reviewed" on the blob means
+ *  a tick survives a reload but clears itself the moment the branch's version of
+ *  that file changes — which is exactly what absorbing an edit does. */
+async function blobShas(root, branch, files) {
+    if (!files.length) return new Map()
+    const out = await run(
+        "git",
+        ["ls-tree", "-z", branch.name, "--", ...files],
+        root
+    )
+    return new Map(
+        out
+            .split("\0")
+            .filter(Boolean)
+            .map((rec) => {
+                const [meta, file] = rec.split("\t")
+                return [file, meta.split(/\s+/)[2]]
+            })
+    )
+}
+
 /** branch name -> the files it changes. One pass, reused for both the row's
  *  file count and the cross-branch overlap check. */
 async function branchFiles(root, stacks) {
@@ -366,7 +387,8 @@ async function uncommittedPlan(root, st) {
 const hunkLine = (hunk) => Number(/\+(\d+)/.exec(hunk)?.[1] ?? 1)
 
 class BranchTree {
-    constructor() {
+    constructor(reviewed) {
+        this.reviewed = reviewed
         this.changed = new vscode.EventEmitter()
         this.onDidChangeTreeData = this.changed.event
         this.overlap = undefined
@@ -393,17 +415,24 @@ class BranchTree {
                 changedFiles(root, node.branch),
                 contaminated(root, node.branch),
             ])
+            const blobs = await blobShas(
+                root,
+                node.branch,
+                files.map((f) => f.file)
+            )
             return files.map((f) =>
                 fileItem(
                     f,
                     node.branch,
+                    blobs.get(f.file) ?? "gone",
                     // names come from the overlap map, but only for files that
                     // actually carry someone else's hunks
                     dirty.has(f.file)
                         ? (this.overlap?.get(f.file) ?? []).filter(
                               (n) => n !== node.branch.name
                           )
-                        : []
+                        : [],
+                    this.reviewed
                 )
             )
         } catch (e) {
@@ -640,7 +669,9 @@ function branchItem(branch, primary) {
     return item
 }
 
-function fileItem(f, branch, alsoIn) {
+const reviewKey = (branch, file) => `reviewed:${branch.name}:${file}`
+
+function fileItem(f, branch, blob, alsoIn, reviewed) {
     // "!" marks the row as also-changed-elsewhere for the decoration provider
     const item = new vscode.TreeItem(
         uri(FILE, f.file, f.status + (alsoIn.length ? "!" : ""))
@@ -667,6 +698,12 @@ function fileItem(f, branch, alsoIn) {
         arguments: [branch, f, alsoIn],
     }
     item.contextValue = "file"
+    const key = reviewKey(branch, f.file)
+    item.review = { key, blob }
+    item.checkboxState =
+        reviewed?.get(key) === blob
+            ? vscode.TreeItemCheckboxState.Checked
+            : vscode.TreeItemCheckboxState.Unchecked
     return item
 }
 
@@ -785,8 +822,16 @@ function prItem(row) {
 }
 
 function activate(context) {
-    const tree = new BranchTree()
+    // workspaceState, so ticks are per-repo and survive a reload
+    const reviewed = {
+        get: (k) => context.workspaceState.get(k),
+        set: (k, v) => context.workspaceState.update(k, v),
+    }
+    const tree = new BranchTree(reviewed)
     const prs = new PrTree()
+    const branchView = vscode.window.createTreeView("butReview.branches", {
+        treeDataProvider: tree,
+    })
     const dirty = new UncommittedTree()
     const dirtyView = vscode.window.createTreeView("butReview.uncommitted", {
         treeDataProvider: dirty,
@@ -897,7 +942,17 @@ function activate(context) {
             },
         }),
 
-        vscode.window.registerTreeDataProvider("butReview.branches", tree),
+        branchView,
+        branchView.onDidChangeCheckboxState(({ items }) => {
+            for (const [item, state] of items)
+                if (item.review)
+                    reviewed.set(
+                        item.review.key,
+                        state === vscode.TreeItemCheckboxState.Checked
+                            ? item.review.blob
+                            : undefined
+                    )
+        }),
         vscode.window.registerTreeDataProvider("butReview.prs", prs),
         dirtyView,
 
