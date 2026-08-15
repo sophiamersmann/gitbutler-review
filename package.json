@@ -1,0 +1,231 @@
+{
+    "name": "but-review",
+    "displayName": "GitButler Review",
+    "description": "Review GitButler stacks, place uncommitted changes, and track their pull requests",
+    "version": "0.1.0",
+    "publisher": "sophiamersmann",
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "main": "./extension.js",
+    "contributes": {
+        "colors": [
+            {
+                "id": "butReview.foreignHunkBorder",
+                "description": "Marks lines in the review pane that come from another applied branch, not the one being reviewed",
+                "defaults": {
+                    "dark": "editorOverviewRuler.incomingContentForeground",
+                    "light": "editorOverviewRuler.incomingContentForeground",
+                    "highContrast": "editorOverviewRuler.incomingContentForeground"
+                }
+            },
+            {
+                "id": "butReview.stackIcon",
+                "description": "Icon colour for stack rows",
+                "defaults": {
+                    "dark": "charts.purple",
+                    "light": "charts.purple",
+                    "highContrast": "charts.purple"
+                }
+            },
+            {
+                "id": "butReview.branchIcon",
+                "description": "Icon colour for branch rows",
+                "defaults": {
+                    "dark": "charts.blue",
+                    "light": "charts.blue",
+                    "highContrast": "charts.blue"
+                }
+            },
+            {
+                "id": "butReview.prOpen",
+                "description": "Icon colour for open pull requests",
+                "defaults": {
+                    "dark": "charts.blue",
+                    "light": "charts.blue",
+                    "highContrast": "charts.blue"
+                }
+            },
+            {
+                "id": "butReview.prDraft",
+                "description": "Icon colour for draft pull requests",
+                "defaults": {
+                    "dark": "descriptionForeground",
+                    "light": "descriptionForeground",
+                    "highContrast": "descriptionForeground"
+                }
+            }
+        ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "butReview",
+                    "title": "GitButler Review",
+                    "icon": "icon-stack3.svg"
+                }
+            ]
+        },
+        "views": {
+            "butReview": [
+                {
+                    "id": "butReview.uncommitted",
+                    "name": "Uncommitted",
+                    "when": "butReview.hasUncommitted"
+                },
+                {
+                    "id": "butReview.branches",
+                    "name": "Branches"
+                },
+                {
+                    "id": "butReview.prs",
+                    "name": "Pull Requests",
+                    "visibility": "collapsed"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "butReview.reviewBranch",
+                "title": "Open All Changes",
+                "category": "GitButler Review",
+                "icon": "$(diff-multiple)"
+            },
+            {
+                "command": "butReview.absorb",
+                "title": "Absorb Uncommitted Changes",
+                "category": "GitButler Review",
+                "icon": "$(combine)"
+            },
+            {
+                "command": "butReview.refresh",
+                "title": "Refresh",
+                "category": "GitButler Review",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "butReview.openFile",
+                "title": "Open Changes",
+                "category": "GitButler Review"
+            },
+            {
+                "command": "butReview.openDirty",
+                "title": "Open Uncommitted Changes",
+                "category": "GitButler Review"
+            },
+            {
+                "command": "butReview.amendInto",
+                "title": "Amend Into\u2026",
+                "category": "GitButler Review",
+                "icon": "$(git-commit)"
+            },
+            {
+                "command": "butReview.refreshPrs",
+                "title": "Refresh Pull Requests",
+                "category": "GitButler Review",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "butReview.openUrl",
+                "title": "Open Pull Request in Browser",
+                "category": "GitButler Review"
+            }
+        ],
+        "menus": {
+            "commandPalette": [
+                {
+                    "command": "butReview.openFile",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.openDirty",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.amendInto",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.openUrl",
+                    "when": "false"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "butReview.absorb",
+                    "when": "view == butReview.uncommitted",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "butReview.refresh",
+                    "when": "view == butReview.uncommitted",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "butReview.refresh",
+                    "when": "view == butReview.branches",
+                    "group": "navigation"
+                },
+                {
+                    "command": "butReview.refreshPrs",
+                    "when": "view == butReview.prs",
+                    "group": "navigation"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "butReview.reviewBranch",
+                    "when": "view == butReview.branches && viewItem == branch",
+                    "group": "inline@1"
+                },
+                {
+                    "command": "butReview.amendInto",
+                    "when": "view == butReview.uncommitted && viewItem == unanchoredFile",
+                    "group": "inline"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "GitButler Review",
+            "properties": {
+                "butReview.ignoredChecks": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "markdownDescription": "CI checks to ignore when summarising a branch's status. Matched as case-insensitive substrings of the check title \u2014 useful for a noisy or slow job you never act on."
+                },
+                "butReview.botReviewers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "chatgpt-codex-connector",
+                        "github-actions",
+                        "copilot-pull-request-reviewer"
+                    ],
+                    "markdownDescription": "Reviewers whose approvals do not count. Logins ending in `[bot]` are always ignored; Codex reviews as `chatgpt-codex-connector` with no such suffix, hence this list."
+                },
+                "butReview.demoteBranches": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "docs"
+                    ],
+                    "markdownDescription": "Stacks whose every branch name contains one of these hyphen-separated tokens are sorted to the bottom, whatever their activity. Token match, so `docs` catches `my-docs` but not `docstring-fix`."
+                }
+            }
+        }
+    },
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/sophiamersmann/gitbutler-review.git"
+    },
+    "scripts": {
+        "test": "node smoke.js"
+    }
+}

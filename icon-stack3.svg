@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+    <!-- Outlined to sit alongside the codicons, which are strokes rather than
+         solids. Masked to a single colour, so only the alpha matters. -->
+    <g
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+    >
+        <rect x="2.25" y="3.25" width="19.5" height="3.5" rx="1.25" />
+        <rect x="2.25" y="10.25" width="19.5" height="3.5" rx="1.25" />
+        <rect x="2.25" y="17.25" width="19.5" height="3.5" rx="1.25" />
+    </g>
+</svg>
