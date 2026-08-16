@@ -65,18 +65,18 @@ async function changedFiles(root, branch) {
     return files.map((f) => ({ ...f, ...churn.get(f.file) }))
 }
 
-/** Lines in the workspace copy of a file that this branch did NOT put there —
- *  i.e. everything the other applied branches contribute to the right-hand pane.
- *  Compared against HEAD (the workspace commit) rather than the worktree, so
- *  your own in-progress edits aren't flagged as somebody else's. */
-async function foreignRanges(root, branch, file) {
+/** The hunks of `git diff a b -- file`, as ranges in b's line numbers. A hunk
+ *  that only deletes lines has none of its own, so it comes back as an empty
+ *  range at the seam it left behind: nothing to decorate, but somewhere to
+ *  jump to. */
+async function hunkRanges(root, a, b, file) {
     const out = await git(root, [
         "diff",
         "--no-ext-diff",
         "-U0",
         "--no-renames",
-        branch.name,
-        "HEAD",
+        a,
+        b,
         "--",
         file,
     ])
@@ -86,13 +86,32 @@ async function foreignRanges(root, branch, file) {
         if (!m) continue
         const start = Number(m[1])
         const count = m[2] === undefined ? 1 : Number(m[2])
-        // count 0 is a pure deletion — no line in this pane to decorate
-        if (count > 0)
-            ranges.push(
-                new vscode.Range(start - 1, 0, start + count - 2, Number.MAX_SAFE_INTEGER)
-            )
+        // "+N,0" is a pure deletion, sitting after line N — and N is 0 when the
+        // file's first lines went
+        ranges.push(
+            count > 0
+                ? new vscode.Range(start - 1, 0, start + count - 2, Number.MAX_SAFE_INTEGER)
+                : new vscode.Range(Math.max(start - 1, 0), 0, Math.max(start - 1, 0), 0)
+        )
     }
     return ranges
+}
+
+/** Both sets of hunks the right-hand pane holds, in its line numbers: what this
+ *  branch put there, and what the other applied branches contribute. Compared
+ *  against HEAD (the workspace commit) rather than the worktree, so your own
+ *  in-progress edits aren't attributed to somebody else. A hunk of the whole
+ *  base→HEAD diff that overlaps a foreign one isn't ours to claim. */
+async function paneRanges(root, branch, file) {
+    const [foreign, all] = await Promise.all([
+        hunkRanges(root, branch.name, "HEAD", file),
+        hunkRanges(root, branch.base, "HEAD", file),
+    ])
+    // an empty range is a deletion seam: real enough to jump to, but dimming a
+    // line nobody touched would be a lie, and subtracting one would swallow the
+    // hunk of ours that happens to sit on it
+    const dim = foreign.filter((r) => !r.isEmpty)
+    return { foreign: dim, own: all.filter((r) => !dim.some((f) => f.intersection(r))) }
 }
 
 /** Files whose workspace copy differs from this branch's tip — precisely what
@@ -123,4 +142,4 @@ function overlapMap(files) {
     return map
 }
 
-module.exports = { EMPTY_TREE, changedFiles, foreignRanges, contaminated, branchFiles, overlapMap }
+module.exports = { EMPTY_TREE, changedFiles, paneRanges, contaminated, branchFiles, overlapMap }

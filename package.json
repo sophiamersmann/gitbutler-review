@@ -134,10 +134,40 @@
                 "title": "Refresh Pull Requests",
                 "category": "GitButler Review",
                 "icon": "$(refresh)"
+            },
+            {
+                "command": "butReview.nextChange",
+                "title": "Next Change on This Branch",
+                "category": "GitButler Review"
+            },
+            {
+                "command": "butReview.prevChange",
+                "title": "Previous Change on This Branch",
+                "category": "GitButler Review"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "butReview.nextChange",
+                "key": "f7",
+                "when": "isInDiffEditor && butReview.reviewing"
+            },
+            {
+                "command": "butReview.prevChange",
+                "key": "shift+f7",
+                "when": "isInDiffEditor && butReview.reviewing"
             }
         ],
         "menus": {
             "commandPalette": [
+                {
+                    "command": "butReview.nextChange",
+                    "when": "butReview.reviewing"
+                },
+                {
+                    "command": "butReview.prevChange",
+                    "when": "butReview.reviewing"
+                },
                 {
                     "command": "butReview.openFile",
                     "when": "false"

@@ -48,7 +48,25 @@ const stub = {
         }
         fire() {}
     },
-    Range: class {},
+    // real enough for paneRanges: it subtracts ranges, so a hollow stub would
+    // make every hunk look like the branch's own
+    Range: class Range {
+        constructor(a, b, c, d) {
+            this.start = { line: a, character: b }
+            this.end = { line: c, character: d }
+        }
+        get isEmpty() {
+            return (
+                this.start.line === this.end.line &&
+                this.start.character === this.end.character
+            )
+        }
+        intersection(o) {
+            const line = Math.max(this.start.line, o.start.line)
+            const end = Math.min(this.end.line, o.end.line)
+            return line <= end ? new Range(line, 0, end, 0) : undefined
+        }
+    },
     Selection: class {},
     OverviewRulerLane: { Right: 2 },
     window: { createTextEditorDecorationType: () => ({}), visibleTextEditors: [] },
@@ -257,6 +275,40 @@ const stale = api.fileItem({ ...entries[0], blob: "0000" }, store, true)
 console.log(
     `ok: ${rows.length} file rows — ${unchecked} unchecked, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}`
 )
+
+// what F7 walks. Parsed from a diff, so it is the part that `diff.external`
+// once broke; a file whose hunks all belong to branches above it is legitimate,
+// a branch with no own hunks anywhere is the parser having failed.
+{
+    const sample = entries.filter((e) => e.f.status !== "D").slice(0, 12)
+    const ranges = await Promise.all(
+        sample.map((e) => api.paneRanges(root, branch, e.f.file))
+    )
+    const own = ranges.reduce((n, r) => n + r.own.length, 0)
+    const foreign = ranges.reduce((n, r) => n + r.foreign.length, 0)
+    const unsorted = ranges.filter((r) =>
+        r.own.some((x, i) => i && x.start.line < r.own[i - 1].start.line)
+    ).length
+    if (!own) console.log("PROBLEM  paneRanges: no own hunks in any sampled file")
+    if (unsorted) console.log(`PROBLEM  paneRanges: ${unsorted} files out of order`)
+    if (!own || unsorted) process.exitCode = 1
+    // F7 walking those hunks: both ends wrap, and the cursor sitting on a hunk
+    // must not count as having reached it
+    const hunks = [10, 20, 30].map((l) => ({ start: { line: l } }))
+    const walk = [
+        [api.nextHunk(hunks, 0, 1), 0, "forward from the top"],
+        [api.nextHunk(hunks, 20, 1), 2, "forward off the current hunk"],
+        [api.nextHunk(hunks, 30, 1), 0, "forward past the last wraps"],
+        [api.nextHunk(hunks, 20, -1), 0, "backward off the current hunk"],
+        [api.nextHunk(hunks, 10, -1), 2, "backward past the first wraps"],
+    ].filter(([got, want]) => got !== want)
+    for (const [got, want, what] of walk)
+        console.log(`PROBLEM  nextHunk: ${what} gave ${got}, want ${want}`)
+    if (walk.length) process.exitCode = 1
+    console.log(
+        `ok: ${own} own hunks, ${foreign} foreign across ${sample.length} files, all ascending; 5 F7 walk cases`
+    )
+}
 
 const groups = api.groupsOf(entries)
 const singles = groups.filter((g) => g.files.length === 1)

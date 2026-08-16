@@ -4,9 +4,9 @@ const vscode = require("vscode")
 const path = require("path")
 const { status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
-const { EMPTY_TREE, foreignRanges } = require("./src/git")
+const { EMPTY_TREE, paneRanges } = require("./src/git")
 const { BASE, DECORATION, FILE, PR } = require("./src/items")
-const { layoutKey } = require("./src/model")
+const { layoutKey, nextHunk } = require("./src/model")
 const { BranchTree, PrTree, UncommittedTree } = require("./src/trees")
 
 function activate(context) {
@@ -59,8 +59,9 @@ function activate(context) {
         overviewRulerColor: new vscode.ThemeColor("butReview.foreignHunkBorder"),
     })
 
-    /** uri string -> {branch, file, ranges, hover}; kept so open diffs can be
-     *  recomputed after an absorb rather than showing stale dimming */
+    /** uri string -> {branch, file, ranges, own, hover}; kept so open diffs can
+     *  be recomputed after an absorb rather than showing stale dimming, and so
+     *  F7 has the branch's own hunks to walk */
     const marked = new Map()
 
     // Every entry, not just the visible ones: a backgrounded diff is painted
@@ -70,11 +71,11 @@ function activate(context) {
         if (!root) return
         await Promise.all(
             [...marked].map(async ([key, m]) => {
-                const ranges = await foreignRanges(root, m.branch, m.file).catch(
-                    () => []
-                )
-                if (ranges.length) marked.set(key, { ...m, ranges })
-                else marked.delete(key)
+                const r = await paneRanges(root, m.branch, m.file).catch(() => ({
+                    foreign: [],
+                    own: [],
+                }))
+                marked.set(key, { ...m, ranges: r.foreign, own: r.own })
             })
         )
         paint()
@@ -180,6 +181,48 @@ function activate(context) {
 
         vscode.window.onDidChangeVisibleTextEditors(paint),
 
+        // F7 only means "next hunk of this branch" in a pane we know about;
+        // everywhere else — including the read-only left pane — it keeps its
+        // built-in meaning of "next difference, whoever made it".
+        vscode.window.onDidChangeActiveTextEditor((editor) =>
+            vscode.commands.executeCommand(
+                "setContext",
+                "butReview.reviewing",
+                !!editor && marked.has(editor.document.uri.toString())
+            )
+        ),
+
+        // The minimap can't be dimmed — extensions have no say over what it
+        // paints — so the way past a foreign hunk is to jump over it.
+        // smoke:registers butReview.nextChange butReview.prevChange
+        ...[
+            ["next", 1],
+            ["prev", -1],
+        ].map(([name, step]) =>
+            vscode.commands.registerCommand(`butReview.${name}Change`, () => {
+                const editor = vscode.window.activeTextEditor
+                const m = editor && marked.get(editor.document.uri.toString())
+                if (!m) return
+                // a branch at the bottom of a busy stack can have every line it
+                // touched rewritten above it — say so rather than sit there
+                if (!m.own.length)
+                    return vscode.window.setStatusBarMessage(
+                        `${m.branch.name} — nothing here is only this branch's`,
+                        2000
+                    )
+                const at = nextHunk(m.own, editor.selection.active.line, step)
+                const range = m.own[at]
+                editor.selection = new vscode.Selection(range.start, range.start)
+                editor.revealRange(range, vscode.TextEditorRevealType.InCenter)
+                // the count is the part the minimap was standing in for: how
+                // much of this file is left to read
+                vscode.window.setStatusBarMessage(
+                    `${m.branch.name} — hunk ${at + 1} of ${m.own.length}`,
+                    2000
+                )
+            })
+        ),
+
         // The tree reads on demand, so an edit made elsewhere wouldn't show up
         // until you hit refresh. Saving is the cheapest honest trigger.
         vscode.workspace.onDidSaveTextDocument(() => {
@@ -195,29 +238,27 @@ function activate(context) {
                 const right =
                     f.status === "D" ? uri(BASE, f.file, EMPTY_TREE) : live
 
+                // an entry even when nothing is foreign: `ranges` empty repaints
+                // as cleared, and `own` is what F7 walks
                 if (f.status !== "D") {
-                    const ranges = await foreignRanges(
-                        repoRoot(),
+                    const r = await paneRanges(repoRoot(), branch, f.file).catch(
+                        () => ({ foreign: [], own: [] })
+                    )
+                    marked.set(right.toString(), {
                         branch,
-                        f.file
-                    ).catch(() => [])
-                    if (ranges.length)
-                        marked.set(right.toString(), {
-                            branch,
-                            file: f.file,
-                            ranges,
-                            hover: new vscode.MarkdownString(
-                                `Not part of \`${branch.name}\`${
-                                    alsoIn.length
-                                        ? ` — also changed by ${alsoIn
-                                              .map((b) => `\`${b}\``)
-                                              .join(", ")}`
-                                        : ""
-                                }.`
-                            ),
-                        })
-                    // a reopen with nothing foreign left must drop the old entry
-                    else marked.delete(right.toString())
+                        file: f.file,
+                        ranges: r.foreign,
+                        own: r.own,
+                        hover: new vscode.MarkdownString(
+                            `Not part of \`${branch.name}\`${
+                                alsoIn.length
+                                    ? ` — also changed by ${alsoIn
+                                          .map((b) => `\`${b}\``)
+                                          .join(", ")}`
+                                    : ""
+                            }.`
+                        ),
+                    })
                 }
 
                 await openDiff(

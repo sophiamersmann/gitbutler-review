@@ -48,6 +48,14 @@ Because the right-hand pane is the *workspace* file rather than the branch tip, 
 applied branches can contribute hunks to it. Those lines are dimmed with a left rail and
 ruler marks, and files carrying them are flagged in the tree.
 
+The minimap can't be dimmed to match — extensions have no say over what it paints — so
+**F7** and **Shift+F7** walk this branch's own hunks instead, skipping everyone else's
+and wrapping at either end. The status bar names the branch and counts (`hunk 3 of 7`),
+which is the part scrolling the minimap was standing in for. Outside a review diff the
+keys keep their built-in meaning of "next difference, whoever made it". A branch at the
+bottom of a busy stack can have every line it touched rewritten above it; there the keys
+say so rather than doing nothing.
+
 **Uncommitted** — appears only when the tree is dirty. Groups edits by the commit absorb
 will amend them into, with a separate **Unanchored** section for changes nothing depends
 on. Absorb is blocked until those are placed explicitly, because absorb would otherwise

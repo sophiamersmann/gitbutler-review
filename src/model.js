@@ -141,4 +141,14 @@ function groupsOf(entries) {
 /** "@531,6 +531,8" -> the line the hunk starts at in the working copy */
 const hunkLine = (hunk) => Number(/\+(\d+)/.exec(hunk)?.[1] ?? 1)
 
-module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine }
+/** Which hunk F7 lands on from `line`, wrapping at either end — past the last
+ *  one the useful answer is the first, not a dead key. */
+function nextHunk(ranges, line, step) {
+    const i =
+        step > 0
+            ? ranges.findIndex((r) => r.start.line > line)
+            : ranges.findLastIndex((r) => r.start.line < line)
+    return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
+}
+
+module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine, nextHunk }
