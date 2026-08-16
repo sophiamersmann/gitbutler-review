@@ -171,19 +171,21 @@ function groupItem(group) {
 
 function fileItem(entry, reviewed, showDir) {
     const { f, branch, blob, alsoIn } = entry
-    // "!" marks the row as also-changed-elsewhere for the decoration provider
+    const { above = [], other = [] } = alsoIn ?? {}
+    // "!" turns the row's badge to the warning colour, which any foreign hunk
+    // earns: it says the pane will hold lines that are not this branch's
     const item = new vscode.TreeItem(
-        uri(FILE, f.file, f.status + (alsoIn.length ? "!" : ""))
+        uri(FILE, f.file, f.status + (above.length || other.length ? "!" : ""))
     )
     const churn = f.adds === "-" ? "binary" : `+${f.adds} −${f.dels}` // numstat marks binaries with -
     item.description = [
         churn,
+        // only another stack is named. A branch above is your own work landing
+        // after yours, and in a stack where that is true of every file the note
+        // was the same sentence twenty times over — the colour already says it
+        other.length ? `⚠ also in ${other.join(", ")}` : "",
         // in tree mode the folder row already says where the file lives
-        alsoIn.length
-            ? `⚠ also in ${alsoIn.join(", ")}`
-            : showDir
-              ? path.dirname(f.file)
-              : "",
+        !other.length && showDir ? path.dirname(f.file) : "",
     ]
         .filter(Boolean)
         .join("  ·  ")
@@ -191,8 +193,11 @@ function fileItem(entry, reviewed, showDir) {
         [
             `\`${f.file}\``,
             `${{ A: "Added", M: "Modified", D: "Deleted" }[f.status] ?? f.status} · ${churn}`,
-            alsoIn.length
-                ? `\n⚠️ Also changed by **${alsoIn.join("**, **")}**. The right-hand pane is the workspace file, so it shows those changes too.`
+            other.length
+                ? `\n⚠️ Also changed by **${other.join("**, **")}**, in another stack — parallel work on the same lines, which only meet when one of them lands.`
+                : "",
+            above.length
+                ? `\n↑ Continued by **${above.join("**, **")}** above it in this stack, already rebased onto yours. The right-hand pane is the workspace file, so it shows those lines too.`
                 : "",
         ]
             .filter(Boolean)

@@ -261,7 +261,7 @@ const entries = (await api.changedFiles(root, branch)).map((f) => ({
     f,
     branch,
     blob: f.blob,
-    alsoIn: [],
+    alsoIn: { above: [], other: [] },
 }))
 
 // review ticks key on the blob, so a changed file must clear its own tick
@@ -275,6 +275,39 @@ const stale = api.fileItem({ ...entries[0], blob: "0000" }, store, true)
 console.log(
     `ok: ${rows.length} file rows — ${unchecked} unchecked, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}`
 )
+
+// who else changes a file, and which of them is worth a warning. A branch below
+// is in this one's base already, so its hunks cancel out of the diff — naming it
+// would send you looking for lines that are not in the pane.
+{
+    const stack = (...names) => ({ branches: names.map((name) => ({ name })) })
+    const where = api.positions([stack("top", "middle", "bottom"), stack("solo")])
+    const split = (me, ...names) =>
+        api.splitOverlap({ name: me }, names, where)
+    const row = (alsoIn) =>
+        api.fileItem(
+            { f: { file: "a.ts", status: "M", adds: "1", dels: "0" }, branch: { name: "middle" }, blob: "x", alsoIn },
+            new Map(),
+            false
+        )
+    const warns = (alsoIn) => String(row(alsoIn).label).endsWith("!")
+    const named = (alsoIn) => row(alsoIn).description.includes("also in")
+    const cases = [
+        [split("middle", "top").above.join(), "top", "a branch above is found"],
+        [split("middle", "bottom").above.join(), "", "a branch below is dropped"],
+        [split("middle", "bottom").other.join(), "", "and is not another stack either"],
+        [split("middle", "solo").other.join(), "solo", "another stack is found"],
+        [warns({ other: ["solo"] }), true, "another stack colours the row"],
+        [warns({ above: ["top"] }), true, "so does a branch above"],
+        [warns({ above: [], other: [] }), false, "a clean file does not"],
+        [named({ other: ["solo"] }), true, "another stack is named in the row"],
+        [named({ above: ["top"] }), false, "a branch above is left to the colour"],
+    ].filter(([got, want]) => got !== want)
+    for (const [got, want, what] of cases)
+        console.log(`PROBLEM  overlap: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (cases.length) process.exitCode = 1
+    console.log("ok: 9 overlap cases — below dropped, any foreign hunk colours the row, only another stack is named")
+}
 
 // what F7 walks. Parsed from a diff, so it is the part that `diff.external`
 // once broke; a file whose hunks all belong to branches above it is legitimate,

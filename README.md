@@ -46,7 +46,15 @@ be grouped while a three-file fix stays a list.
 
 Because the right-hand pane is the *workspace* file rather than the branch tip, other
 applied branches can contribute hunks to it. Those lines are dimmed with a left rail, and
-files carrying them are flagged in the tree.
+files carrying them take the warning colour in the tree. Only some of them are named,
+though, because the two ways this happens are not the same news. A branch **above in the
+same stack** is your own later work, already rebased onto yours and landing after it —
+the colour is the whole message, and in a stack where that is true of every file, naming
+it would be the same sentence twenty times over. A branch in **another stack** is parallel
+work on the same lines, which only meet when one of them lands, so that row says `⚠ also
+in <branch>` and the tooltip explains the difference either way. A branch *below* counts
+for neither: its changes are in this branch's base, so they cancel out of the diff and
+there is nothing in the pane to go and look at.
 
 The minimap can't be dimmed to match — extensions have no say over what it paints — and
 it already shows every change in the file anyway. So the overview ruler is spent on the

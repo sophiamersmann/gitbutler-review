@@ -47,6 +47,8 @@ function activate(context) {
     const openDiff = (left, right, title, opts) =>
         vscode.commands.executeCommand("vscode.diff", left, right, title, opts)
 
+    const names = (list) => list.map((b) => `\`${b}\``).join(", ")
+
     // The diff editor already owns the background channel, so the marker lives
     // in opacity and a left rail — see paneRanges above. Not the ruler: that
     // strip is spent on the hunks below.
@@ -244,7 +246,7 @@ function activate(context) {
 
         vscode.commands.registerCommand(
             "butReview.openFile",
-            async (branch, f, alsoIn = []) => {
+            async (branch, f, alsoIn = {}) => {
                 const live = vscode.Uri.file(path.join(repoRoot(), f.file))
                 // a deleted file has no workspace side; show it against nothing
                 const right =
@@ -261,14 +263,18 @@ function activate(context) {
                         file: f.file,
                         ranges: r.foreign,
                         own: r.own,
+                        // named the way the tree names them, so a grey line and
+                        // its row agree on whose work it is
                         hover: new vscode.MarkdownString(
-                            `Not part of \`${branch.name}\`${
-                                alsoIn.length
-                                    ? ` — also changed by ${alsoIn
-                                          .map((b) => `\`${b}\``)
-                                          .join(", ")}`
-                                    : ""
-                            }.`
+                            [
+                                `Not part of \`${branch.name}\`.`,
+                                alsoIn.other?.length &&
+                                    `Also changed by ${names(alsoIn.other)}, in another stack.`,
+                                alsoIn.above?.length &&
+                                    `Continued by ${names(alsoIn.above)} above it in this stack.`,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")
                         ),
                     })
                 }

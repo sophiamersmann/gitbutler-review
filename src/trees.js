@@ -5,7 +5,7 @@ const { listPrs, reviewThreads, stacksOf, status, uncommittedPlan } = require(".
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, overlapMap } = require("./git")
 const { branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, prItem, prStackItem, stackItem, unanchoredGroupItem } = require("./items")
-const { groupsOf, layoutFor } = require("./model")
+const { groupsOf, layoutFor, positions, splitOverlap } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -34,6 +34,7 @@ class BranchTree extends Tree {
 
     refresh() {
         this.overlap = undefined // recomputed on next expand
+        this.where = undefined
         super.refresh()
     }
 
@@ -56,12 +57,18 @@ class BranchTree extends Tree {
                 branch: node.branch,
                 blob: f.blob,
                 // names come from the overlap map, but only for files that
-                // actually carry someone else's hunks
-                alsoIn: dirty.has(f.file)
-                    ? (this.overlap?.get(f.file) ?? []).filter(
-                          (n) => n !== node.branch.name
-                      )
-                    : [],
+                // actually carry someone else's hunks — and split, because a
+                // branch above in your own stack is not the same news as one
+                // in a stack of its own
+                alsoIn: splitOverlap(
+                    node.branch,
+                    dirty.has(f.file)
+                        ? (this.overlap?.get(f.file) ?? []).filter(
+                              (n) => n !== node.branch.name
+                          )
+                        : [],
+                    this.where ?? new Map()
+                ),
             }))
             if (layoutFor(node.branch, this.overrides) === "list")
                 return entries.map((e) => fileItem(e, this.reviewed, true))
@@ -88,6 +95,7 @@ class BranchTree extends Tree {
         const stacks = stacksOf(await status(root))
         const files = await branchFiles(root, stacks)
         this.overlap = overlapMap(files)
+        this.where = positions(stacks)
         for (const s of stacks)
             for (const b of s.branches)
                 b.fileCount = files.get(b.name)?.length

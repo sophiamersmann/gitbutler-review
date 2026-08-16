@@ -138,6 +138,34 @@ function groupsOf(entries) {
         .map(([dir, files]) => ({ dir, files }))
 }
 
+/** branch name -> which stack it is in and how far below that stack's top.
+ *  `stacksOf` keeps branches top-first, so a smaller depth is further up. */
+const positions = (stacks) =>
+    new Map(
+        stacks.flatMap((s, stack) =>
+            s.branches.map((b, depth) => [b.name, { stack, depth }])
+        )
+    )
+
+/** The other branches changing a file, split by what that costs you. One above
+ *  in the same stack is your own later work, already rebased onto yours and
+ *  landing after it; one in another stack is parallel work on the same lines,
+ *  and the two only meet when either of them lands. A branch *below* is dropped
+ *  outright: its changes are in this branch's base, so they cancel out of the
+ *  diff and naming it sends you hunting for lines that aren't there. */
+function splitOverlap(branch, names, where) {
+    const me = where.get(branch.name)
+    const above = []
+    const other = []
+    for (const name of names) {
+        const it = where.get(name)
+        if (!it || !me) continue
+        if (it.stack !== me.stack) other.push(name)
+        else if (it.depth < me.depth) above.push(name)
+    }
+    return { above, other }
+}
+
 /** "@531,6 +531,8" -> the line the hunk starts at in the working copy */
 const hunkLine = (hunk) => Number(/\+(\d+)/.exec(hunk)?.[1] ?? 1)
 
@@ -151,4 +179,4 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine, nextHunk }
+module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine, nextHunk, positions, splitOverlap }
