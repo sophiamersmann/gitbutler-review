@@ -223,6 +223,9 @@ function prStackItem(stack, prs) {
         stackName(stack),
         vscode.TreeItemCollapsibleState.Expanded
     )
+    // the view repaints on save and on window focus, and a rebuilt row without
+    // an id is a new row — which would re-expand a stack you just collapsed
+    item.id = `pr-stack-${stack.cliId}`
     item.description = `${prs.length} PRs`
     item.iconPath = new vscode.ThemeIcon(
         "layers",

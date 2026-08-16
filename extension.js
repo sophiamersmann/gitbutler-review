@@ -116,6 +116,11 @@ function activate(context) {
     function refreshAll() {
         tree.refresh()
         dirty.refresh()
+        // A PR row's CI circle comes from `but status`, which the two views
+        // above just read — so repaint it for free. `changed.fire()`, not
+        // `refresh()`: the reviews and threads behind it are network, and
+        // refresh() would throw that cache away.
+        prs.changed.fire()
         syncVisibility()
         repaintOpen()
     }
@@ -235,6 +240,14 @@ function activate(context) {
                     2000
                 )
             })
+        ),
+
+        // CI is the one PR fact that moves while you do nothing, and coming
+        // back from the browser is when you want to know — which beats a timer
+        // that would poll a cache GitButler fills on its own schedule. Local
+        // only; the `gh` half still waits for the refresh button.
+        vscode.window.onDidChangeWindowState(
+            (state) => state.focused && prs.changed.fire()
         ),
 
         // The tree reads on demand, so an edit made elsewhere wouldn't show up
