@@ -121,8 +121,34 @@ async function uncommittedPlan(root, st) {
     return { groups, unanchored, total: batch.total_files }
 }
 
+const THREADS_QUERY =
+    "query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{author{login}}}}}}}}"
+
+/** Review-thread resolution, the one review fact `gh pr list --json` cannot
+ *  reach — it lives only in GraphQL. Asked for by node id, so no owner/repo
+ *  lookup is needed. Failure is not fatal: a PR without threads reads as
+ *  "nothing unresolved", which is what the old behaviour assumed anyway.
+ *  Fills the PR objects in place, so a caller that already rendered them can
+ *  repaint rather than refetch — see PrTree. */
+async function reviewThreads(root, prs) {
+    if (!prs.length) return
+    const args = ["api", "graphql", "-f", `query=${THREADS_QUERY}`]
+    for (const p of prs) args.push("-F", `ids[]=${p.id}`)
+    const { data } = JSON.parse(await run("gh", args, root))
+    const byId = new Map(prs.map((p) => [p.id, p]))
+    for (const node of data.nodes ?? [])
+        if (byId.has(node.id))
+            byId.get(node.id).reviewThreads = node.reviewThreads.nodes.map(
+                (t) => ({
+                    isResolved: t.isResolved,
+                    login: t.comments.nodes[0]?.author?.login ?? "",
+                })
+            )
+}
+
 /** Every open PR of yours, in one call — per-branch lookups would be ~1s each.
- *  The only network call in the extension, so the caller decides when. */
+ *  Network, so the caller decides when. Deliberately does not wait on
+ *  `reviewThreads`: the rows can be drawn without it. */
 const listPrs = async (root) =>
     JSON.parse(
         await run(
@@ -130,10 +156,10 @@ const listPrs = async (root) =>
             [
                 "pr", "list", "--author", "@me", "--limit", "100",
                 "--json",
-                "number,title,url,isDraft,reviews,reviewRequests,headRefName",
+                "id,number,title,url,isDraft,author,reviews,reviewRequests,headRefName",
             ],
             root
         )
     )
 
-module.exports = { status, stacksOf, uncommittedPlan, listPrs }
+module.exports = { status, stacksOf, uncommittedPlan, listPrs, reviewThreads }

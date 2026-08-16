@@ -4,7 +4,7 @@
 const vscode = require("vscode")
 const path = require("path")
 const { ago, uri } = require("./exec")
-const { ciState, humanDecision, hunkLine, isDemoted, layoutFor, reviewKey, rollup, stackName } = require("./model")
+const { ciState, humanDecision, hunkLine, isDemoted, layoutFor, openThreads, reviewKey, rollup, stackName } = require("./model")
 
 const BASE = "butbase" // butbase:/<path>?<ref>    — the file as of a ref, read-only
 
@@ -233,7 +233,8 @@ function prItem(row) {
     // not gated on isDraft: a draft with a review request is worth seeing
     const decision = humanDecision(pr)
     const ci = ciState(branch)
-    const [circle, summary] = rollup(ci.state, decision)
+    const open = openThreads(pr)
+    const [circle, summary] = rollup(ci.state, decision, open)
 
     // branch names are short and scannable; the PR title is the elaboration
     const item = new vscode.TreeItem(branch.name)
@@ -257,7 +258,7 @@ function prItem(row) {
             "",
             `${circle}  **${summary}**`,
             `CI: ${ci.label ?? "no checks"}`,
-            `Review: ${decision ?? "none requested"}${pr.isDraft ? " · draft" : ""}`,
+            `Review: ${decision ?? "none requested"}${pr.isDraft ? " · draft" : ""}${open ? ` · ${open} unresolved thread${open > 1 ? "s" : ""}` : ""}`,
             ...ci.failing.map((c) => `- ✗ ${c}`),
         ].join("  \n")
     )

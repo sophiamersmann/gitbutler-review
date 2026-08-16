@@ -1,7 +1,7 @@
 // The three TreeDataProviders. Each one fetches, then hands rows to items.js.
 
 const vscode = require("vscode")
-const { listPrs, stacksOf, status, uncommittedPlan } = require("./but")
+const { listPrs, reviewThreads, stacksOf, status, uncommittedPlan } = require("./but")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, overlapMap } = require("./git")
 const { branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, prItem, prStackItem, stackItem, unanchoredGroupItem } = require("./items")
@@ -135,6 +135,7 @@ class UncommittedTree extends Tree {
 class PrTree extends Tree {
     refresh() {
         this.cache = undefined
+        this.threads = undefined
         super.refresh()
     }
 
@@ -143,13 +144,19 @@ class PrTree extends Tree {
         if (!root) return []
         if (node) return node.prs?.map(prItem) ?? []
         try {
+            // the promise is what's cached, not its result: two overlapping
+            // refreshes would otherwise both get past the await and fetch twice
+            const prs = await (this.cache ??= listPrs(root))
+            // thread resolution costs another round trip and only ever changes
+            // a circle, so don't hold the rows for it — fill the same PR
+            // objects in the background and repaint. `changed.fire()`, not
+            // `refresh()`, or the repaint would clear the cache and loop.
+            this.threads ??= reviewThreads(root, prs)
+                .catch(() => {})
+                .then(() => this.changed.fire())
+
             const stacks = stacksOf(await status(root))
-            const byBranch = new Map(
-                (this.cache ??= await listPrs(root)).map((p) => [
-                    p.headRefName,
-                    p,
-                ])
-            )
+            const byBranch = new Map(prs.map((p) => [p.headRefName, p]))
 
             const rows = []
             for (const stack of stacks) {
@@ -162,6 +169,8 @@ class PrTree extends Tree {
             }
             return rows
         } catch (e) {
+            // a cached rejection would keep failing until a manual refresh
+            this.cache = undefined
             vscode.window.showErrorMessage(
                 `but-review: could not list pull requests (${e.message.split("\n")[0]})`
             )

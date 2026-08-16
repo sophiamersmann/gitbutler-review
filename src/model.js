@@ -9,14 +9,17 @@ const { cfg } = require("./exec")
 // what it asks of you, most demanding first.
 const ROLLUP = [
     ["🔴", "needs work", (ci, d) => ci === "failing" || d === "changes requested"],
+    // an approval with threads still open is a to-do of yours, so it outranks
+    // CI: the tick on GitHub says done, the threads say otherwise
+    ["🟠", "approved, comments unresolved", (ci, d, open) => d === "approved" && open > 0],
     ["🟡", "CI running", (ci) => ci === "running"],
     ["🔵", "review requested", (ci, d) => d === "review requested"],
     ["🟢", "approved", (ci, d) => d === "approved"],
     ["⚪", "nothing pending", () => true],
 ]
 
-const rollup = (ci, decision) =>
-    ROLLUP.find(([, , when]) => when(ci, decision))
+const rollup = (ci, decision, open = 0) =>
+    ROLLUP.find(([, , when]) => when(ci, decision, open))
 
 /** CI summary with the noisy checks dropped, so one flaky job doesn't colour
  *  the whole branch. Recomputes the conclusion rather than trusting `but`'s,
@@ -65,6 +68,16 @@ function humanDecision(pr) {
     if (states.includes("APPROVED")) return "approved"
     return (pr.reviewRequests ?? []).length ? "review requested" : undefined
 }
+
+/** Open review threads worth acting on: not bots, and not your own — every PR
+ *  here is authored by you, so the PR author is the one login to skip, and no
+ *  extra "who am I" call is needed. Missing data (older cache, GraphQL
+ *  failure) means none. */
+const openThreads = (pr) =>
+    (pr.reviewThreads ?? []).filter(
+        (t) =>
+            !t.isResolved && !isBot(t.login) && t.login !== pr.author?.login
+    ).length
 
 /** Matched on hyphen-separated tokens, so "docs" catches `my-docs` and
  *  `docs-cleanup` without catching `docstring-fix`. */
@@ -128,4 +141,4 @@ function groupsOf(entries) {
 /** "@531,6 +531,8" -> the line the hunk starts at in the working copy */
 const hunkLine = (hunk) => Number(/\+(\d+)/.exec(hunk)?.[1] ?? 1)
 
-module.exports = { rollup, ciState, humanDecision, isDemoted, stackName, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine }
+module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine }

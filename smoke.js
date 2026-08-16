@@ -202,6 +202,39 @@ for (const s of stacks) {
 }
 console.log(`ok: ${prRows} pr rows`)
 
+// green only when every thread is settled — the one rule the circle encodes
+// that GitHub's own approval tick does not
+{
+    const thread = (isResolved, login) => ({ isResolved, login })
+    const open = (...threads) =>
+        api.openThreads({
+            author: { login: "me" },
+            reviewThreads: threads,
+        })
+    const circle = (...threads) =>
+        api.rollup(undefined, "approved", open(...threads))[0]
+    const cases = [
+        [circle(), "🟢", "approved, no threads"],
+        [circle(thread(true, "reviewer")), "🟢", "all resolved"],
+        [circle(thread(false, "reviewer")), "🟠", "one open"],
+        [circle(thread(false, "codex[bot]")), "🟢", "bot threads don't count"],
+        [circle(thread(false, "me")), "🟢", "your own threads don't count"],
+        [api.rollup(undefined, undefined, 2)[0], "⚪", "unreviewed stays as-is"],
+        [String(open(thread(false, "a"), thread(false, "b"))), "2", "counted"],
+    ]
+    const bad = cases.filter(([got, want]) => got !== want)
+    for (const [got, want, what] of bad)
+        console.log(`PROBLEM  rollup: ${what} gave ${got}, want ${want}`)
+    // the rows above were built before this resolved, exactly as the panel
+    // does it — so this also proves prItem survives a PR with no thread data
+    await api.reviewThreads(root, prs)
+    if (prs.some((p) => p.reviewThreads === undefined))
+        console.log("PROBLEM  reviewThreads: some PRs came back unfilled")
+    if (bad.length) process.exitCode = 1
+    const withThreads = prs.filter((p) => p.reviewThreads?.length).length
+    console.log(`ok: ${cases.length} rollup cases, ${withThreads} live PRs with threads`)
+}
+
 // the biggest branch, so the row builders get a real workout
 const branch = stacks
     .flatMap((s) => s.branches)
