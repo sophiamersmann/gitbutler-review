@@ -69,15 +69,28 @@ position in the status bar (`hunk 3 of 7`). Outside a review diff the keys keep 
 built-in meaning. If every line the branch touched has been rewritten above it, the keys
 report that instead.
 
-### Uncommitted
+### Changes
 
-Shown only when the tree is dirty. Edits are grouped by the commit they'd be absorbed
-into; clicking one opens it at the first change.
+Shown only when the tree is dirty, and read top-down as the absorb plan itself: **branch →
+commit → file → hunk**. Each top-level row is a branch of yours, under it the commits your
+edits would be amended into, under those the files, and a file with more than one hunk in
+that commit expands into its hunks. Branches are listed in the same order as the Branches
+view. Clicking any row opens the diff at the first line it changes.
 
-Edits that no commit depends on go in a separate **Unanchored** section, and absorb is
-blocked until they're placed explicitly with **Amend Into…**. Left alone they'd be filed
-under an arbitrary branch. With only one branch applied there's nowhere else they could
-go, so the section doesn't appear.
+Rows carry the actions that fit them — **Absorb** to put a change where the plan says,
+**Amend Into…** to pick the commit yourself, **Discard** to throw it away. All three are
+one `but` call, and all three are one oplog entry, so `but undo` reverses any of them.
+
+Each row is addressed by its GitButler CLI ID, so a hunk row acts on exactly that hunk.
+The exception is a file whose hunks lock to two different commits: it appears under both,
+each row saying `2 of 3 hunks`, and those rows act on the hunks they show rather than on
+the file — otherwise discard would take changes the row doesn't list.
+
+Edits that no commit depends on go in an **Unanchored** section at the bottom, with their
+files directly under it — they have no branch, which is the whole point of the section. Left alone
+they'd be filed under an arbitrary branch, so the view's absorb button is hidden while any
+exist — it could only refuse — and they're placed explicitly with **Amend Into…**. With
+only one branch applied there's nowhere else they could go, so the section doesn't appear.
 
 ### Pull Requests
 

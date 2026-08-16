@@ -4,7 +4,7 @@
 const vscode = require("vscode")
 const path = require("path")
 const { ago, uri } = require("./exec")
-const { ciState, humanDecision, hunkLine, isDemoted, layoutFor, openThreads, reviewKey, rollup, stackName } = require("./model")
+const { ciState, humanDecision, hunkLine, hunkRange, isDemoted, layoutFor, lineRange, openThreads, reviewKey, rollup, stackName } = require("./model")
 
 const BASE = "butbase" // butbase:/<path>?<ref>    — the file as of a ref, read-only
 
@@ -20,20 +20,52 @@ const DECORATION = {
 
 const LETTER = { added: "A", modified: "M", deleted: "D" }
 
+const HUNK_ICON = {
+    added: ["diff-added", "gitDecoration.addedResourceForeground"],
+    modified: ["diff-modified", "gitDecoration.modifiedResourceForeground"],
+    deleted: ["diff-removed", "gitDecoration.deletedResourceForeground"],
+}
+
 function unanchoredGroupItem(rows) {
     const item = new vscode.TreeItem(
         "Unanchored",
         vscode.TreeItemCollapsibleState.Expanded
     )
     item.description = "no commit depends on these"
-    item.iconPath = new vscode.ThemeIcon(
-        "warning",
-        new vscode.ThemeColor("butReview.foreignHunkBorder")
-    )
+    // no icon: this row is the absence of a branch, and its label and description
+    // say that already. The ⚠️ stays in the file tooltips, attached to something
+    // you can act on.
     item.tooltip =
         "Absorb would drop these in the primary lane by default, not because anything depends on them. Place them explicitly with \"Amend Into…\"."
     item.contextValue = "unanchoredGroup"
+    item.id = "unanchored"
     item.rows = rows
+    return item
+}
+
+/** The branch a run of commits belongs to. Same glyph and colour as a branch
+ *  row in the Branches view, so one name looks the same in both trees. */
+function branchGroupItem(branch) {
+    const item = new vscode.TreeItem(
+        branch.name,
+        vscode.TreeItemCollapsibleState.Expanded
+    )
+    const n = branch.groups.length
+    item.description = `${n} commit${n === 1 ? "" : "s"}  ·  ${branch.files} file${branch.files === 1 ? "" : "s"}`
+    item.iconPath = new vscode.ThemeIcon(
+        "git-branch",
+        new vscode.ThemeColor("butReview.branchIcon")
+    )
+    item.tooltip = new vscode.MarkdownString(
+        [
+            `**${branch.name}**`,
+            "",
+            ...branch.groups.map((g) => `- ${g.commit.commit_summary}`),
+        ].join("\n")
+    )
+    item.contextValue = "branchGroup"
+    item.id = `branch:${branch.name}`
+    item.commits = branch.groups
     return item
 }
 
@@ -42,44 +74,138 @@ function commitGroupItem(group) {
         group.commit.commit_summary,
         vscode.TreeItemCollapsibleState.Expanded
     )
-    item.description = group.meta.branch ?? ""
+    const n = group.files.length
+    item.description = `${n} file${n === 1 ? "" : "s"}`
     item.iconPath = new vscode.ThemeIcon("git-commit")
     item.tooltip = new vscode.MarkdownString(
         [
             `**${group.commit.commit_summary}**`,
-            group.meta.branch ? `on \`${group.meta.branch}\`` : "",
             `_${group.commit.reason_description}_`,
         ]
             .filter(Boolean)
             .join("  \n")
     )
     item.contextValue = "commitGroup"
+    item.id = `commit:${group.commit.commit_id}`
     item.group = group
     return item
 }
 
 function dirtyFileItem(row, unanchored) {
     const letter = LETTER[row.change?.changeType] ?? "M"
-    const item = new vscode.TreeItem(uri(FILE, row.path, letter))
-    item.description = unanchored
-        ? `would default to ${row.meta.branch ?? "the primary lane"}`
-        : row.hunks.join(", ")
+    // one hunk is the whole file, so its child row would say the same thing twice
+    const item = new vscode.TreeItem(
+        uri(FILE, row.path, letter),
+        row.hunks.length > 1
+            ? vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.None
+    )
+    // a collapsible row with nothing but a resourceUri gets the icon theme's
+    // folder glyph, which a file with two hunks is not
+    item.iconPath = vscode.ThemeIcon.File
+    // a file whose hunks split across two commits has a row under each, and
+    // neither of them is the file
+    const whole = !row.hunkTotal || row.hunks.length === row.hunkTotal
+    // one whole hunk is the file, so name its lines; anything else is a count,
+    // since the child rows name the ranges once expanded — and listing them
+    // here too pushed the useful part of a long path off the row
+    const hunks = !whole
+        ? `${row.hunks.length} of ${row.hunkTotal} hunks`
+        : row.hunks.length > 1
+          ? `${row.hunks.length} hunks`
+          : rangeOf(row, 0)
+    // where an unanchored change would land is in the tooltip, not the row: the
+    // group above it already says the only thing that matters, that no commit
+    // asked for it. Churn as the branch view writes it, so a file reads the same
+    // in both trees.
+    item.description = [hunks, churn(row.hunkMeta)].filter(Boolean).join("  ·  ")
+    const ranges = row.hunks
+        .map((_, i) => rangeOf(row, i))
+        .filter(Boolean)
+        .join(", ")
     item.tooltip = new vscode.MarkdownString(
         [
             `\`${row.path}\``,
             unanchored
                 ? `⚠️ Nothing depends on this. Absorb would put it on **${row.meta.branch}** simply because that lane is first.`
                 : `Absorbs into **${row.commit.commit_summary}**`,
-            `hunks: ${row.hunks.join(", ")}`,
+            ranges && `hunks: ${ranges}`,
+            whole
+                ? ""
+                : `Its other ${row.hunkTotal - row.hunks.length} belong elsewhere — discarding here touches only the ${row.hunks.length} above.`,
+        ]
+            .filter(Boolean)
+            .join("  \n")
+    )
+    item.command = {
+        command: "butReview.openDirty",
+        title: "Open Changes",
+        // the third argument only for a row that has hunks to show
+        arguments: [row.change, jumpLine(row, 0), row.hunks.length > 1],
+    }
+    // the whole file when the row is the whole file, its own hunks otherwise —
+    // `but` takes several IDs of one kind, so both are one call
+    const args = whole
+        ? [row.change?.cliId].filter(Boolean)
+        : row.hunkMeta.map((h) => h.id).filter(Boolean)
+    // nothing addressable, no actions: a button that cannot name its target
+    if (args.length)
+        item.contextValue = unanchored ? "unanchoredFile" : "dirtyFile"
+    // VSCode derives an id from the resourceUri when none is given, and a file
+    // whose hunks lock to two commits has a row under each — same uri, twice in
+    // one tree. Explicit and stable, so expansion state survives a reword too.
+    item.id = rowId(row, unanchored)
+    item.row = row
+    item.unanchored = unanchored
+    item.target = {
+        args,
+        // absorb takes one source and routes each hunk itself, so the file ID
+        // is both the shortest call and the correct one
+        absorb: row.change?.cliId,
+        name: path.basename(row.path),
+        detail: whole ? row.path : `${row.path} — ${hunks}`,
+        commit: row.commit.commit_summary,
+    }
+    return item
+}
+
+/** A hunk of a multi-hunk file: the same three actions as its parent, applied
+ *  to one range. `but` addresses hunks as `<file>:<hunk>`, so absorbing or
+ *  discarding one is the same call with a longer ID. */
+function hunkItem(row, i, unanchored) {
+    const meta = row.hunkMeta?.[i] ?? {}
+    // a hunk that deletes the file names no lines, because there are none left
+    const label = rangeOf(row, i) ?? "whole file"
+    const item = new vscode.TreeItem(label)
+    // from the hunk's own churn, not the file's status: within one modified file,
+    // pure new code and a rewrite are different things to review
+    const [glyph, color] = HUNK_ICON[hunkKind(meta)]
+    item.iconPath = new vscode.ThemeIcon(glyph, new vscode.ThemeColor(color))
+    item.description = churn([meta])
+    item.tooltip = new vscode.MarkdownString(
+        [
+            `\`${row.path}\` — ${label}`,
+            unanchored
+                ? `⚠️ Nothing depends on this hunk. Absorb would put it on **${row.meta.branch}** simply because that lane is first.`
+                : `Absorbs into **${row.commit.commit_summary}**`,
         ].join("  \n")
     )
     item.command = {
         command: "butReview.openDirty",
         title: "Open Changes",
-        arguments: [row.change, hunkLine(row.hunks[0])],
+        arguments: [row.change, jumpLine(row, i)],
     }
-    item.contextValue = unanchored ? "unanchoredFile" : "dirtyFile"
-    item.row = row
+    if (meta.id) item.contextValue = unanchored ? "unanchoredHunk" : "dirtyHunk"
+    item.id = `${rowId(row, unanchored)}:${i}`
+    // deliberately no `.row`: that is what marks a node as having hunk children,
+    // and a hunk row's children would be itself
+    item.target = {
+        args: [meta.id],
+        absorb: meta.id,
+        name: `${path.basename(row.path)} ${label.toLowerCase()}`,
+        detail: `${row.path}  ${row.hunks[i]}`,
+        commit: row.commit.commit_summary,
+    }
     return item
 }
 
@@ -321,4 +447,35 @@ function prItem(row) {
     return item
 }
 
-module.exports = { BASE, FILE, PR, DECORATION, unanchoredGroupItem, commitGroupItem, dirtyFileItem, stackItem, branchItem, wholeStackItem, groupItem, fileItem, prStackItem, prItem }
+/** Unique per row in the tree: the same path can sit under a commit group and
+ *  under Unanchored at once, and under two commit groups at once. */
+const rowId = (row, unanchored) =>
+    `${unanchored ? "u" : "a"}:${row.commit.commit_id}:${row.path}`
+
+/** Pure new code, pure removal, or a rewrite — the distinction the file's own
+ *  A/M/D status can't make, since every one of these lives in a modified file. */
+const hunkKind = ({ adds, dels }) =>
+    adds && !dels ? "added" : dels && !adds ? "deleted" : "modified"
+
+/** What a hunk row calls itself: the lines it edits, falling back to the
+ *  header's whole span when `but diff` gave us no body to read. */
+const rangeOf = (row, i) => {
+    const { from, to } = row.hunkMeta?.[i] ?? {}
+    return from ? lineRange(from, to) : hunkRange(row.hunks[i])
+}
+
+/** The line a row's click lands on: the first line it actually changes, or the
+ *  hunk header's when we have no body to read. */
+const jumpLine = (row, i) => row.hunkMeta?.[i]?.from ?? hunkLine(row.hunks[i])
+
+/** "+5 −1" over a row's hunks, written the way the branch view writes a file's.
+ *  Blank when `but diff` gave us nothing to count. */
+function churn(hunks) {
+    const known = (hunks ?? []).filter((h) => h?.adds !== undefined)
+    if (!known.length) return ""
+    const adds = known.reduce((n, h) => n + h.adds, 0)
+    const dels = known.reduce((n, h) => n + h.dels, 0)
+    return `+${adds} −${dels}`
+}
+
+module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unanchoredGroupItem, branchGroupItem, commitGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, groupItem, fileItem, prStackItem, prItem }

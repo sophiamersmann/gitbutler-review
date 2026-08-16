@@ -4,8 +4,8 @@ const vscode = require("vscode")
 const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
-const { branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, prItem, prStackItem, stackItem, unanchoredGroupItem, wholeStackItem } = require("./items")
-const { groupsOf, layoutFor, positions, splitOverlap, wholeStack } = require("./model")
+const { branchGroupItem, branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, hunkItem, prItem, prStackItem, stackItem, unanchoredGroupItem, wholeStackItem } = require("./items")
+const { byBranch, groupsOf, layoutFor, positions, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -132,21 +132,39 @@ class UncommittedTree extends Tree {
         const root = repoRoot()
         if (!root) return []
         try {
+            // `commits`, not `branch`: BranchTree means something else by that
+            if (node?.commits) return node.commits.map(commitGroupItem)
             if (node?.rows) return node.rows.map((r) => dirtyFileItem(r, true))
             if (node?.group)
                 return node.group.files.map((r) => dirtyFileItem(r, false))
+            if (node?.row)
+                return node.row.hunks.map((_, i) =>
+                    hunkItem(node.row, i, node.unanchored)
+                )
             if (node) return []
 
-            const plan = await uncommittedPlan(root, await status(root))
-            const anchored = plan.groups.reduce((n, g) => n + g.files.length, 0)
-            this.view.description = plan.unanchored.length
-                ? `${anchored} anchored, ${plan.unanchored.length} unanchored`
-                : `${plan.total} file${plan.total > 1 ? "s" : ""}`
+            const st = await status(root)
+            const plan = await uncommittedPlan(root, st)
+            // hides the view's Absorb button: with a stray in the list the
+            // command can only refuse, and a button that never works is worse
+            // than no button. Set here because this is where the plan already
+            // is — the command keeps its own guard for the palette, and for a
+            // plan that changed since the last render.
+            vscode.commands.executeCommand(
+                "setContext",
+                "butReview.hasUnanchored",
+                plan.unanchored.length > 0
+            )
+            // unanchored last: the commit groups are the plan you skim and
+            // accept, and the strays are the leftovers you deal with after —
+            // above them they pushed the whole plan down the panel
             return [
+                ...byBranch(plan.groups, positions(stacksOf(st))).map(
+                    branchGroupItem
+                ),
                 ...(plan.unanchored.length
                     ? [unanchoredGroupItem(plan.unanchored)]
                     : []),
-                ...plan.groups.map(commitGroupItem),
             ]
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)

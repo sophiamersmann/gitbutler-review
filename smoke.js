@@ -13,7 +13,7 @@ const stub = {
             this.collapsibleState = c
         }
     },
-    TreeItemCollapsibleState: { Collapsed: 1, Expanded: 2 },
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
     TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
     ThemeIcon: class {
         constructor(i, c) {
@@ -21,6 +21,7 @@ const stub = {
             this.color = c
         }
         static Folder = { id: "folder" }
+        static File = { id: "file" }
     },
     ThemeColor: class {
         constructor(i) {
@@ -69,7 +70,16 @@ const stub = {
     },
     Selection: class {},
     OverviewRulerLane: { Right: 2 },
-    window: { createTextEditorDecorationType: () => ({}), visibleTextEditors: [] },
+    window: {
+        createTextEditorDecorationType: () => ({}),
+        visibleTextEditors: [],
+        // the providers swallow their own errors into this, which without a
+        // stub crashes the run with the wrong message entirely
+        showErrorMessage: (m) => {
+            console.log(`PROBLEM  ${m}`)
+            process.exitCode = 1
+        },
+    },
     workspace: {
         workspaceFolders: [{ uri: { fsPath: process.cwd() } }],
         getConfiguration: () => ({
@@ -81,7 +91,7 @@ const stub = {
                 })[k] ?? d,
         }),
     },
-    commands: {},
+    commands: { executeCommand: () => {} }, // setContext, nothing to observe here
     env: {},
 }
 
@@ -412,6 +422,72 @@ console.log(
             `ok: whole stack "${row.label}" — ${wsFiles.length} files vs ${biggest} in its biggest branch, ${multi} built by several branches, ${7 - cases.length}/7 cases`
         )
     }
+}
+
+// The Changes view, through its provider. The part worth checking is the join
+// behind a hunk row: the absorb plan names a hunk by range, `but diff` names it
+// by CLI ID, and a miss renders as a row whose buttons are all gone.
+{
+    const { UncommittedTree } = require("./src/trees")
+    const dirty = new UncommittedTree()
+    const kids = async (nodes) =>
+        (await Promise.all(nodes.map((n) => dirty.getChildren(n)))).flat()
+    // the two halves of the top level sit at different depths: a branch holds
+    // commits, the strays hold their files directly
+    const top = await dirty.getChildren()
+    const branches = top.filter((n) => n.contextValue === "branchGroup")
+    const strayGroup = top.filter((n) => n.contextValue === "unanchoredGroup")
+    const groups = await kids(branches)
+    // every file row, not just the expandable ones — a single-hunk file still
+    // has to resolve its ID, and this is the only place that proves it
+    const anchored = await kids(groups)
+    const files = [...anchored, ...(await kids(strayGroup))]
+    const hunks = await kids(files)
+    const rows = [...top, ...groups, ...files, ...hunks]
+    const strays = top.findIndex((n) => n.contextValue === "unanchoredGroup")
+    const fmt = (r) => (r ? api.lineRange(r.from, r.to) : undefined)
+    const cases = [
+        [hunks.filter((h) => !h.contextValue).length, 0, "every hunk row resolved a CLI ID"],
+        // one id twice in a tree is VSCode's problem, not ours to discover later
+        [new Set(rows.map((r) => r.id)).size, rows.length, "every row id is unique"],
+        [rows.filter((r) => !r.id).length, 0, "and every row has one"],
+        // the label and the cursor come from one number, so a row that says L814
+        // and opens on 811 is the bug this catches
+        [hunks.every((h) => h.command.arguments[1] === Number(/\d+/.exec(h.label)[0])), true, "a hunk row opens on the line it names"],
+        [files.filter((f) => f.row.hunkMeta[0]?.from).every((f) => f.command.arguments[1] === f.row.hunkMeta[0].from), true, "a file row opens on its first changed line"],
+        [files.filter((f) => !f.target.args.length).length, 0, "so did every file row"],
+        [strays === -1 || strays === top.length - 1, true, "unanchored sits last"],
+        // a commit under the wrong branch row would be a lie about where the
+        // change lands, which is the one thing this view exists to say
+        [branches.every((b) => b.commits.every((g) => (g.meta.branch ?? "no branch") === b.label)), true, "every commit sits under its own branch"],
+        [branches.reduce((n, b) => n + b.commits.reduce((m, g) => m + g.files.length, 0), 0), anchored.length, "the branch rows hold every anchored file"],
+        [api.hunkRange("@531,6 +531,8"), "L531–538", "a bodyless hunk falls back to its span"],
+        [api.hunkRange("@1,3 +7"), "L7", "a one-line hunk names one line"],
+        // the span is not the edit: git pads a hunk with three lines of context
+        // either side, which is how "@1,3 +1,5" came out as L1–5 for two lines
+        // added at the end of a three-line file
+        [fmt(api.changedLines("@@ -1,3 +1,5 @@\n a\n b\n c\n+d\n+e\n", 1)), "L4–5", "context before the change is dropped"],
+        [fmt(api.changedLines("@@ -1,6 +1,7 @@\n a\n b\n c\n+d\n e\n f\n g\n", 1)), "L4", "context after it too"],
+        [fmt(api.changedLines("@@ -810,7 +810,7 @@\n a\n b\n c\n-old\n+new\n e\n f\n g\n", 810)), "L813", "a replaced line is one line"],
+        [fmt(api.changedLines("@@ -1,4 +1,3 @@\n a\n b\n-gone\n c\n", 1)), "L3", "a deletion is named by the line that closed over it"],
+        [fmt(api.changedLines("@@ -1,3 +1,3 @@\n a\n b\n c\n", 1)), undefined, "a hunk with no edits has no range"],
+        // a whole-file add or delete: the plan writes one side, `but diff` both,
+        // and an unjoined row loses its hunk IDs and its churn
+        [api.rangeKey("new.md", "+1,3"), "new.md\u00001,0,1,3", "a new file joins on its empty old side"],
+        [api.rangeKey("gone.md", "-1,105"), "gone.md\u00001,105,1,0", "a deleted one on its empty new side"],
+        [api.hunkRange("-1,105"), undefined, "and names no working-copy lines"],
+        // the icon is the one thing on a hunk row that isn't in the label
+        [api.hunkKind({ adds: 2, dels: 0 }), "added", "pure new code reads as added"],
+        [api.hunkKind({ adds: 0, dels: 3 }), "deleted", "pure removal reads as deleted"],
+        [api.hunkKind({ adds: 1, dels: 1 }), "modified", "a rewrite reads as modified"],
+        [api.hunkKind({}), "modified", "so does a hunk we have no counts for"],
+    ].filter(([got, want]) => got !== want)
+    for (const [got, want, what] of cases)
+        console.log(`PROBLEM  changes: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (cases.length) process.exitCode = 1
+    console.log(
+        `ok: changes — ${branches.length} branches, ${groups.length} commits, ${files.length} file rows, ${hunks.length} hunk rows, all addressable`
+    )
 }
 
 const groups = api.groupsOf(entries)

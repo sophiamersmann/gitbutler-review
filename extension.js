@@ -25,7 +25,6 @@ function activate(context) {
     const dirtyView = vscode.window.createTreeView("butReview.uncommitted", {
         treeDataProvider: dirty,
     })
-    dirty.view = dirtyView // needs the view for its description; set after creation
     let refreshTimer
 
     // The view is hidden while the tree is clean, so nothing renders an empty
@@ -330,7 +329,13 @@ function activate(context) {
 
         vscode.commands.registerCommand(
             "butReview.openDirty",
-            async (c, line) => {
+            async (c, line, expand) => {
+                // A collapsible row with a command runs the command rather than
+                // toggling, which left the twistie as the only way to see a
+                // file's hunks. The clicked row is the focused one, and it is
+                // still focused until the diff opens below — so ask first.
+                if (expand)
+                    await vscode.commands.executeCommand("list.expand")
                 const right =
                     c.changeType === "deleted"
                         ? uri(BASE, c.filePath, EMPTY_TREE)
@@ -388,6 +393,20 @@ function activate(context) {
             }
         }),
 
+        // One row's worth of absorb. The row already names the commit it lands
+        // in, so there is nothing to ask — and `but undo` reverses it.
+        vscode.commands.registerCommand("butReview.absorbOne", async (node) => {
+            try {
+                await run("but", ["absorb", node.target.absorb], repoRoot())
+                refreshAll()
+                vscode.window.showInformationMessage(
+                    `Absorbed ${node.target.name} into ${node.target.commit}. \`but undo\` reverses it.`
+                )
+            } catch (e) {
+                vscode.window.showErrorMessage(`but-review: ${e.message}`)
+            }
+        }),
+
         vscode.commands.registerCommand("butReview.amendInto", async (node) => {
             try {
                 const root = repoRoot()
@@ -409,17 +428,31 @@ function activate(context) {
                     ])
                 )
                 const pick = await vscode.window.showQuickPick(picks, {
-                    title: `Amend ${path.basename(node.row.path)} into which commit?`,
+                    title: `Amend ${node.target.name} into which commit?`,
                     matchOnDescription: true,
                     placeHolder: "Type a branch name to narrow the list",
                 })
                 if (!pick) return
                 await run(
                     "but",
-                    ["amend", "-t", pick.id, node.row.change.cliId],
+                    ["amend", "-t", pick.id, ...node.target.args],
                     root
                 )
                 refreshAll()
+            } catch (e) {
+                vscode.window.showErrorMessage(`but-review: ${e.message}`)
+            }
+        }),
+
+        // No confirmation: `but discard` is one oplog entry like the other two,
+        // so the toast naming `but undo` is the safety net.
+        vscode.commands.registerCommand("butReview.discard", async (node) => {
+            try {
+                await run("but", ["discard", ...node.target.args], repoRoot())
+                refreshAll()
+                vscode.window.showInformationMessage(
+                    `Discarded ${node.target.name}. \`but undo\` reverses it.`
+                )
             } catch (e) {
                 vscode.window.showErrorMessage(`but-review: ${e.message}`)
             }

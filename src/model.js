@@ -165,6 +165,28 @@ function groupsOf(entries) {
         .map(([dir, files]) => ({ dir, files }))
 }
 
+/** The absorb plan as branches rather than a flat list of commits: two commits
+ *  on one branch belong together, and the branch was being repeated as every
+ *  commit row's description anyway.
+ *
+ *  Ordered by `where`, the same map the Branches view sorts on, so the two trees
+ *  list branches alike. A commit on no applied branch can't be placed in that
+ *  order and sits last — it shouldn't happen, but a row that vanishes would be
+ *  worse than one out of order. */
+function byBranch(groups, where) {
+    const rank = (name) => {
+        const at = where.get(name)
+        return at ? at.stack * 1000 + at.depth : Number.MAX_SAFE_INTEGER
+    }
+    return [...Map.groupBy(groups, (g) => g.meta.branch ?? "no branch")]
+        .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+        .map(([name, gs]) => ({
+            name,
+            groups: gs,
+            files: gs.reduce((n, g) => n + g.files.length, 0),
+        }))
+}
+
 /** branch name -> which stack it is in and how far below that stack's top.
  *  `stacksOf` keeps branches top-first, so a smaller depth is further up. */
 const positions = (stacks) =>
@@ -200,6 +222,47 @@ function splitOverlap(branch, names, where) {
 /** "@531,6 +531,8" -> the line the hunk starts at in the working copy */
 const hunkLine = (hunk) => Number(/\+(\d+)/.exec(hunk)?.[1] ?? 1)
 
+/** "L531" or "L531–538" — GitHub's permalink notation, short enough to leave the
+ *  row to its churn. Working-copy lines, so it reads the same as the ruler in
+ *  the pane it opens. */
+const lineRange = (from, to) => (to > from ? `L${from}–${to}` : `L${from}`)
+
+/** The lines a hunk actually changes, which is not its range: a hunk carries
+ *  three lines of context either side, so "@1,3 +1,5" is two edited lines
+ *  wearing a five-line header. Walks the patch body in working-copy
+ *  coordinates — context and added lines advance it, removed lines don't
+ *  occupy one, so a deletion is named by the line that closed over it.
+ *
+ *  Numbers, not a label: the row's name and the line its click lands on have to
+ *  be the same answer. */
+function changedLines(diff, newStart) {
+    let line = newStart
+    let from
+    let to
+    for (const l of (diff ?? "").split("\n").slice(1)) {
+        if (l.startsWith("\\")) continue // "\ No newline at end of file"
+        else if (l.startsWith("+")) {
+            from ??= line
+            to = line
+            line++
+        } else if (l.startsWith("-")) {
+            from ??= line
+            to ??= line
+        } else line++
+    }
+    return from === undefined ? undefined : { from, to }
+}
+
+/** Fallback for a hunk whose patch body we never got: the header's whole span,
+ *  context and all. */
+function hunkRange(hunk) {
+    const [, start, count = "1"] = /\+(\d+)(?:,(\d+))?/.exec(hunk) ?? []
+    // a whole-file deletion reads "-1,105" and has no working-copy lines to
+    // name; the row leaves the slot empty rather than echoing the header at you
+    if (!start) return undefined
+    return lineRange(Number(start), Number(start) + Number(count) - 1)
+}
+
 /** Which hunk F7 lands on from `line`, wrapping at either end — past the last
  *  one the useful answer is the first, not a dead key. */
 function nextHunk(ranges, line, step) {
@@ -210,4 +273,4 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine, nextHunk, positions, splitOverlap }
+module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, byBranch, changedLines, groupsOf, hunkLine, hunkRange, lineRange, nextHunk, positions, splitOverlap }

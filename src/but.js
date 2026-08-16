@@ -2,7 +2,7 @@
 // from what they return.
 
 const { run } = require("./exec")
-const { isDemoted } = require("./model")
+const { changedLines, isDemoted } = require("./model")
 
 // Three views ask for status on every refresh and it costs ~230ms, so collapse
 // the burst. Short-lived rather than explicitly invalidated: a stale read can
@@ -63,23 +63,111 @@ const absorbPlan = async (root, ...source) =>
         await run("but", ["absorb", "--dry-run", "--json", ...source], root)
     )
 
+/** One file's answers, keyed by the three things that can change it: its own
+ *  hunks, the workspace's commits, and the path. Kept between refreshes because
+ *  the view refreshes on every save, and each miss is a `but` process — twenty
+ *  dirty files meant twenty of them, every time you hit ⌘S. */
+const reasonCache = new Map()
+
 /** (file, commit) -> reason. The batch plan reports one reason per commit group,
  *  which a file with no dependency of its own silently inherits — so ask about
  *  each file separately. Proven: README.md reads `hunk_dependency` in the batch
  *  and `default_stack` on its own. */
-async function fileReasons(root, changes) {
-    const per = await Promise.all(
-        changes.map((c) =>
-            absorbPlan(root, c.cliId).catch(() => ({ commits: [] }))
-        )
+async function fileReasons(root, changes, hunkSig, commitSig) {
+    const keyOf = (c) => `${commitSig}\0${c.filePath}\0${hunkSig.get(c.filePath) ?? ""}`
+    await Promise.all(
+        changes
+            .filter((c) => !reasonCache.has(keyOf(c)))
+            .map(async (c) => {
+                const plan = await absorbPlan(root, c.cliId).catch(() => ({
+                    commits: [],
+                }))
+                reasonCache.set(
+                    keyOf(c),
+                    plan.commits.flatMap((k) =>
+                        k.files.map((f) => [
+                            `${f.path}\0${k.commit_id}`,
+                            k.reason,
+                        ])
+                    )
+                )
+            })
     )
-    return new Map(
-        per.flatMap((plan) =>
-            plan.commits.flatMap((k) =>
-                k.files.map((f) => [`${f.path}\0${k.commit_id}`, k.reason])
+    const live = new Set(changes.map(keyOf))
+    // every stale key is one the workspace can no longer produce, so the cache
+    // stays the size of the dirty tree
+    for (const k of reasonCache.keys()) if (!live.has(k)) reasonCache.delete(k)
+    return new Map(changes.flatMap((c) => reasonCache.get(keyOf(c)) ?? []))
+}
+
+// the plan writes a hunk as "@810,7 +810,7", and git drops the ",1" on a
+// single-line side — so both halves of the join have to agree on that
+const RANGE = /@(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?/
+// a whole-file add or delete has one side only, and the plan writes just that
+// side — "+1,3" for a new file, "-1,105" for a deleted one — where `but diff`
+// still reports both, the absent one at zero length. Unjoined, those rows lost
+// their hunk IDs and their churn.
+const ONE_SIDED = /^([-+])(\d+)(?:,(\d+))?$/
+const rangeKey = (path, hunk) => {
+    const [, sign, start, count = "1"] = ONE_SIDED.exec(hunk.trim()) ?? []
+    if (sign)
+        return sign === "+"
+            ? `${path}\0${start},0,${start},${count}`
+            : `${path}\0${start},${count},${start},0`
+    const [, a, b = "1", c, d = "1"] = RANGE.exec(hunk) ?? []
+    return `${path}\0${a},${b},${c},${d}`
+}
+
+/** Per-hunk `<file>:<hunk>` CLI IDs and churn, keyed by range. The absorb plan
+ *  identifies a hunk by its range alone, and every per-hunk command needs an
+ *  ID — `but diff` is the only place they exist. */
+async function hunkIds(root) {
+    const { changes } = JSON.parse(await run("but", ["diff", "--json"], root))
+    const ids = new Map()
+    const counts = new Map()
+    // a file's ranges, as one string: what tells a cached absorb reason from a
+    // stale one without re-asking `but`
+    const sig = new Map()
+    for (const c of changes)
+        for (const h of c.diff?.hunks ?? []) {
+            // the header line is the range we keyed on; the rest is churn
+            const lines = (h.diff ?? "").split("\n").slice(1)
+            ids.set(
+                `${c.path}\0${h.oldStart},${h.oldLines},${h.newStart},${h.newLines}`,
+                {
+                    id: c.id,
+                    adds: lines.filter((l) => l.startsWith("+")).length,
+                    dels: lines.filter((l) => l.startsWith("-")).length,
+                    // the lines it edits, not the range it spans — a hunk's
+                    // header points at its first context line. A file deleted
+                    // whole leaves no line to point at, so it gets none.
+                    ...(h.newLines ? changedLines(h.diff, h.newStart) : {}),
+                }
             )
-        )
-    )
+            counts.set(c.path, (counts.get(c.path) ?? 0) + 1)
+            sig.set(
+                c.path,
+                `${sig.get(c.path) ?? ""};${h.oldStart},${h.oldLines},${h.newStart},${h.newLines}`
+            )
+        }
+    return { ids, counts, sig }
+}
+
+/** The plan reports one entry per hunk, so a file with three hunks in one commit
+ *  arrives as three rows with the same name and nothing but a range to tell them
+ *  apart. One row per file, hunks underneath — and the split into anchored and
+ *  unanchored happens first, since a file can be both. */
+function byPath(rows) {
+    const out = new Map()
+    for (const r of rows) {
+        const prev = out.get(r.path)
+        if (!prev) out.set(r.path, r)
+        else {
+            prev.hunks = [...prev.hunks, ...r.hunks]
+            prev.hunkMeta = [...prev.hunkMeta, ...r.hunkMeta]
+        }
+    }
+    return [...out.values()]
 }
 
 /** Splits what absorb would do into commits that genuinely depend on a change,
@@ -92,10 +180,25 @@ async function uncommittedPlan(root, st) {
     // the per-file plans that decide it are one `but` process each, so don't
     // ask when the answer can't matter.
     const ambiguous = st.stacks.flatMap((s) => s.branches).length > 1
-    const [batch, reasons] = await Promise.all([
+    // a commit added, amended or rebased can change what a file depends on
+    // without the file itself moving, so the reason cache keys on all of them
+    const commitSig = st.stacks
+        .flatMap((s) => s.branches.flatMap((b) => b.commits.map((c) => c.commitId)))
+        .join()
+    // the batch runs alongside; the per-file reasons wait on `but diff`, whose
+    // ranges are what lets them come from cache
+    const [batch, { ids, counts, sig }] = await Promise.all([
         absorbPlan(root),
-        ambiguous ? fileReasons(root, changes) : new Map(),
+        // rows still render without IDs; they just carry no actions
+        hunkIds(root).catch(() => ({
+            ids: new Map(),
+            counts: new Map(),
+            sig: new Map(),
+        })),
     ])
+    const reasons = ambiguous
+        ? await fileReasons(root, changes, sig, commitSig)
+        : new Map()
 
     const commitMeta = new Map()
     for (const s of st.stacks)
@@ -115,14 +218,27 @@ async function uncommittedPlan(root, st) {
                 commit: k,
                 meta,
                 change: changeOf.get(f.path),
+                // positional: hunkMeta[i] belongs to hunks[i]
+                hunkMeta: f.hunks.map((h) => ids.get(rangeKey(f.path, h)) ?? {}),
+                // how many the file has in all, so a row that holds only some
+                // of them knows not to act as if it were the file
+                hunkTotal: counts.get(f.path),
             }
             const reason = reasons.get(`${f.path}\0${k.commit_id}`) ?? k.reason
             if (ambiguous && reason === "default_stack") unanchored.push(row)
             else files.push(row)
         }
-        if (files.length) groups.push({ commit: k, meta, files })
+        if (files.length)
+            groups.push({ commit: k, meta, files: byPath(files) })
     }
-    return { groups, unanchored, total: batch.total_files }
+    const strays = byPath(unanchored)
+    return {
+        groups,
+        unanchored: strays,
+        // files, not plan entries — `total_files` counts the latter
+        total:
+            groups.reduce((n, g) => n + g.files.length, 0) + strays.length,
+    }
 }
 
 const DETAILS_QUERY =
@@ -170,4 +286,4 @@ const listPrs = async (root) =>
         )
     )
 
-module.exports = { status, stacksOf, uncommittedPlan, listPrs, prDetails }
+module.exports = { status, stacksOf, uncommittedPlan, rangeKey, listPrs, prDetails }

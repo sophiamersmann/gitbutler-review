@@ -78,7 +78,7 @@
             "butReview": [
                 {
                     "id": "butReview.uncommitted",
-                    "name": "Uncommitted",
+                    "name": "Changes",
                     "when": "butReview.hasUncommitted",
                     "icon": "icon-stack3.svg"
                 },
@@ -98,9 +98,9 @@
         "commands": [
             {
                 "command": "butReview.absorb",
-                "title": "Absorb Uncommitted Changes",
+                "title": "Absorb All Changes",
                 "category": "GitButler Review",
-                "icon": "$(combine)"
+                "icon": "$(fold-up)"
             },
             {
                 "command": "butReview.refresh",
@@ -115,7 +115,7 @@
             },
             {
                 "command": "butReview.openDirty",
-                "title": "Open Uncommitted Changes",
+                "title": "Open Change",
                 "category": "GitButler Review"
             },
             {
@@ -123,6 +123,18 @@
                 "title": "Amend Into\u2026",
                 "category": "GitButler Review",
                 "icon": "$(git-commit)"
+            },
+            {
+                "command": "butReview.absorbOne",
+                "title": "Absorb",
+                "category": "GitButler Review",
+                "icon": "$(fold-up)"
+            },
+            {
+                "command": "butReview.discard",
+                "title": "Discard Changes",
+                "category": "GitButler Review",
+                "icon": "$(discard)"
             },
             {
                 "command": "butReview.openUrl",
@@ -193,6 +205,14 @@
                     "when": "false"
                 },
                 {
+                    "command": "butReview.absorbOne",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.discard",
+                    "when": "false"
+                },
+                {
                     "command": "butReview.openUrl",
                     "when": "false"
                 },
@@ -208,7 +228,7 @@
             "view/title": [
                 {
                     "command": "butReview.absorb",
-                    "when": "view == butReview.uncommitted",
+                    "when": "view == butReview.uncommitted && !butReview.hasUnanchored",
                     "group": "navigation"
                 },
                 {
@@ -224,9 +244,19 @@
             ],
             "view/item/context": [
                 {
+                    "command": "butReview.absorbOne",
+                    "when": "view == butReview.uncommitted && viewItem =~ /^dirty(File|Hunk)$/",
+                    "group": "inline@1"
+                },
+                {
                     "command": "butReview.amendInto",
-                    "when": "view == butReview.uncommitted && viewItem == unanchoredFile",
-                    "group": "inline"
+                    "when": "view == butReview.uncommitted && viewItem =~ /(File|Hunk)$/",
+                    "group": "inline@2"
+                },
+                {
+                    "command": "butReview.discard",
+                    "when": "view == butReview.uncommitted && viewItem =~ /(File|Hunk)$/",
+                    "group": "inline@3"
                 },
                 {
                     "command": "butReview.viewAsGroup",
