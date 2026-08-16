@@ -70,16 +70,19 @@
                 {
                     "id": "butReview.uncommitted",
                     "name": "Uncommitted",
-                    "when": "butReview.hasUncommitted"
+                    "when": "butReview.hasUncommitted",
+                    "icon": "icon-stack3.svg"
                 },
                 {
                     "id": "butReview.branches",
-                    "name": "Branches"
+                    "name": "Branches",
+                    "icon": "icon-stack3.svg"
                 },
                 {
                     "id": "butReview.prs",
                     "name": "Pull Requests",
-                    "visibility": "collapsed"
+                    "visibility": "collapsed",
+                    "icon": "icon-stack3.svg"
                 }
             ]
         },
