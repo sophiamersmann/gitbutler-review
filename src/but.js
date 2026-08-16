@@ -18,6 +18,10 @@ function status(root) {
     return statusCache.value
 }
 
+// A write of our own lands inside the TTL, so the refresh that follows it would
+// otherwise repaint from the status the write just invalidated.
+status.invalidate = () => (statusCache = { at: 0, value: undefined })
+
 /** Applied stacks, each branch paired with the branch below it.
  *  Ordered by most recent commit — `but`'s own order is the app's lane order,
  *  which says nothing about what you are working on. The one thing it did

@@ -26,7 +26,7 @@ function activate(context) {
         treeDataProvider: dirty,
     })
     dirty.view = dirtyView // needs the view for its description; set after creation
-    let saveTimer
+    let refreshTimer
 
     // The view is hidden while the tree is clean, so nothing renders an empty
     // box — which means its own getChildren can't be what discovers the state.
@@ -118,6 +118,8 @@ function activate(context) {
     syncVisibility()
 
     function refreshAll() {
+        // every trigger below can arrive right after a `but` write of our own
+        status.invalidate()
         tree.refresh()
         dirty.refresh()
         // A PR row's CI circle comes from `but status`, which the two views
@@ -126,8 +128,33 @@ function activate(context) {
         // refresh() would throw that cache away.
         prs.changed.fire()
         syncVisibility()
-        repaintOpen()
+        if (marked.size) repaintOpen()
     }
+
+    // Triggers come in bursts — an agent writing twenty files, one `but` command
+    // moving refs and index — and every refresh is a `but status`.
+    const scheduleRefresh = () => {
+        clearTimeout(refreshTimer)
+        refreshTimer = setTimeout(refreshAll, 500)
+    }
+
+    // The built-in git extension already watches the working tree and `.git`, so
+    // its status event is the one signal that covers both halves of stale: what
+    // an agent or a terminal changed, and `but` operations, which rewrite the
+    // workspace commit.
+    async function watchGit() {
+        const ext = vscode.extensions.getExtension("vscode.git")
+        if (!ext) return
+        const api = (await ext.activate()).getAPI(1)
+        const hook = (repo) =>
+            context.subscriptions.push(repo.state.onDidChange(scheduleRefresh))
+        api.repositories.forEach(hook)
+        // repositories is empty until git has finished scanning, which usually
+        // outlasts our activation
+        context.subscriptions.push(api.onDidOpenRepository(hook))
+    }
+
+    watchGit()
 
     context.subscriptions.push(
         // Left pane of every diff: read-only by virtue of being a content
@@ -246,20 +273,16 @@ function activate(context) {
             })
         ),
 
-        // CI is the one PR fact that moves while you do nothing, and coming
-        // back from the browser is when you want to know — which beats a timer
-        // that would poll a cache GitButler fills on its own schedule. Local
-        // only; the `gh` half still waits for the refresh button.
+        // Coming back from the app, a terminal or the browser is when you want
+        // the truth — and CI is the one fact that moved while you did nothing.
+        // Local only; the `gh` half still waits for the refresh button.
         vscode.window.onDidChangeWindowState(
-            (state) => state.focused && prs.changed.fire()
+            (state) => state.focused && scheduleRefresh()
         ),
 
-        // The tree reads on demand, so an edit made elsewhere wouldn't show up
-        // until you hit refresh. Saving is the cheapest honest trigger.
-        vscode.workspace.onDidSaveTextDocument(() => {
-            clearTimeout(saveTimer)
-            saveTimer = setTimeout(refreshAll, 500)
-        }),
+        // Redundant with the git watcher above, but faster: it reacts to the
+        // save rather than to the status read that follows it.
+        vscode.workspace.onDidSaveTextDocument(scheduleRefresh),
 
         vscode.commands.registerCommand(
             "butReview.openFile",
