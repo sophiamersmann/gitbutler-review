@@ -1,98 +1,107 @@
 # GitButler Review
 
-A VSCode extension for reviewing [GitButler](https://gitbutler.com) stacks — because
-GitButler's workspace holds every applied branch at once, and VSCode's built-in tools
-have no idea that's happening.
+A VSCode extension for reviewing [GitButler](https://gitbutler.com) stacks. GitButler
+applies every active branch to the working tree at once, which the built-in Git tooling
+doesn't account for.
 
-It answers three questions the existing tools can't:
+It covers three things:
 
-- **What does this branch actually change**, versus the branch below it in its stack —
-  in a diff you can edit. Or the whole stack at once, versus the target branch, which is
-  the only view of it that matches what lands.
-- **Where will this uncommitted edit land**, and is that because something depends on it
-  or because absorb had to guess.
-- **Which of my pull requests can I merge**, given that only the bottom of a stack is
-  ever mergeable.
+- **Reviewing one branch's diff** against the branch below it in its stack, in a pane you
+  can edit. Or the whole stack at once, against the target branch.
+- **Placing uncommitted edits**, so you can see where each one will end up before
+  committing, and catch the ones that would land somewhere arbitrary.
+- **Tracking your pull requests** across stacks, with one status per PR combining CI,
+  review decision, and unresolved threads.
 
 ## Why it exists
 
 VSCode can only make a diff editable when one side is a real file on disk. GitLens can
 compare any two refs, but those comparisons are read-only, and comparing the working tree
-against a base shows every applied branch's changes at once. So there is no built-in way
-to review one branch's diff and fix what you find in the same pane.
+against a base shows every applied branch's changes at once. There's no built-in way to
+review one branch's diff and fix what you find in the same pane.
 
-This extension builds that pane: left is the file as of the branch below (a read-only
-content provider), right is the live workspace file. Edits land in your working tree, and
-`but absorb` routes them back into the commits they belong to.
+This extension builds that pane: on the left, the file as of the branch's base, read-only;
+on the right, the live workspace file. Edits go to your working tree, and `but absorb`
+routes them back into the commits they belong to.
 
 ## Views
 
-**Branches** — applied stacks, named from the `(topic)` convention in commit subjects and
-sorted by recent activity. Click a file for an editable diff, or tick it off once
-reviewed. Files open one at a time; there is no bulk-open, since a branch is read file by
-file anyway.
+### Branches
 
-A stack of more than one branch also carries an **All N branches** row above its branches:
-the same review, but of one diff from the merge base to the stack tip — what the target
-branch gets once the whole stack lands. Per-branch review can't ask that question. A
-helper added in one branch and called three above it is correct in both diffs and wrong in
-neither; debug code added in the second branch and removed in the fourth is in two reviews
-and correctly in none of this one. Files built by more than one branch say so (`in 3
-branches`), since that is where a signature drifts from the calls written below it. It is
-a pre-push pass rather than the daily loop — on a five-branch stack it
-is one long read — which is why it's a row you click and not a mode you can be lost in,
-and why the branch rows keep their CI and PR status beside it.
+Applied stacks, sorted by recent activity, with each branch row showing its CI summary
+and age. A stack is named from the `(topic)` convention in commit subjects, falling back
+to the common prefix of its branch names. Click a file to open the diff, or tick it off
+once reviewed.
 
-Ticks are stored per repo and keyed on the file's blob SHA at the branch tip, so they
-survive a reload but clear themselves as soon as the branch's version of that file
-changes — absorbing an edit into a file you had already reviewed un-ticks it. The
-whole-stack lens keeps its own ticks, keyed on the stack's bottom branch: a shared file's
-stack diff is not any one branch's diff of it, so a tick from either read would be a claim
-about the other you never made.
+Ticks are stored per repo and survive a reload, but clear as soon as the branch's version
+of a file changes — absorbing an edit into a file you'd already reviewed un-ticks it.
 
-Files are shown as a flat list, or grouped by directory when you ask for it. A directory holding a single file stays a plain row rather than becoming a group you
-have to expand. Otherwise a group's label is the directory's last segment with the parent
-in grey beside it — in a monorepo the part that tells directories apart sits at the end of a long
-shared prefix, and the panel clips from the end.
+Files are shown as a flat list or grouped by directory, chosen per branch from an icon on
+the branch row (`butReview.fileLayout` sets the default). A directory holding a single
+file stays a plain row instead of a group you have to expand.
 
-Layout is chosen per branch, from an icon on the branch row, so a sprawling refactor can
-be grouped while a three-file fix stays a list.
-`butReview.fileLayout` sets the default for branches you haven't chosen for.
+**All N branches** sits above the branches of a multi-branch stack. It's the same review,
+but of the stack as a single diff — what the target branch gets once all of it lands,
+which per-branch review doesn't show. A helper added in one branch and called three above
+it looks fine in both branch diffs; debug code added in the second branch and removed in
+the fourth shows up in two branch diffs and in neither of these. Files touched by more
+than one branch of the stack are marked `in 3 branches`. Its ticks are kept separate from
+the branch rows', since a shared file's stack diff isn't the same as any one branch's
+diff of it.
 
-Because the right-hand pane is the *workspace* file rather than the branch tip, other
-applied branches can contribute hunks to it. Those lines are dimmed with a left rail, and
-files carrying them take the warning colour in the tree. Only some of them are named,
-though, because the two ways this happens are not the same news. A branch **above in the
-same stack** is your own later work, already rebased onto yours and landing after it —
-the colour is the whole message, and in a stack where that is true of every file, naming
-it would be the same sentence twenty times over. A branch in **another stack** is parallel
-work on the same lines, which only meet when one of them lands, so that row says `⚠ also
-in <branch>` and the tooltip explains the difference either way. A branch *below* counts
-for neither: its changes are in this branch's base, so they cancel out of the diff and
-there is nothing in the pane to go and look at.
+#### Lines from other branches
 
-The minimap can't be dimmed to match — extensions have no say over what it paints — and
-it already shows every change in the file anyway. So the overview ruler is spent on the
-opposite question: one mark per hunk that *is* this branch's, and nothing else in that
-strip. It appears only in files another branch has also touched; where every hunk is
-yours the diff editor's own marks already say so, in colours that distinguish an
-insertion from a deletion, and painting over them would say less. A painted ruler is
-therefore its own signal: this file is shared. **F7** and **Shift+F7** walk those same
-hunks, skipping everyone else's and wrapping at either end. The status bar names the branch and counts (`hunk 3 of 7`),
-which is the part scrolling the minimap was standing in for. Outside a review diff the
-keys keep their built-in meaning of "next difference, whoever made it". A branch at the
-bottom of a busy stack can have every line it touched rewritten above it; there the keys
-say so rather than doing nothing.
+Because the right-hand pane is the workspace file, other applied branches can contribute
+lines to it. Those lines are dimmed with a left rail, and files containing them get the
+warning colour in the tree.
 
-**Uncommitted** — appears only when the tree is dirty. Groups edits by the commit absorb
-will amend them into, with a separate **Unanchored** section for changes nothing depends
-on. Absorb is blocked until those are placed explicitly, because absorb would otherwise
-drop them in the primary lane silently, on whatever branch happens to be first.
+Only some are named, because the two cases differ. A branch **above in the same stack** is
+your own later work, already rebased onto this branch and landing after it, so the colour
+is enough. A branch in **another stack** is parallel work on the same lines, so that row
+also says `⚠ also in <branch>`. Either way the tooltip spells it out. A branch *below*
+isn't flagged at all: its changes are already in this branch's base, so they don't appear
+in the diff.
 
-**Pull Requests** — grouped by stack, which is the thing GitHub's own extension can't show.
-One `gh pr list` call, made only when the view is first opened or you hit refresh —
-automatic refreshes leave it alone, since it is the only part that touches the network. Review state is computed from the full review history rather than
-`latestReviews`, and bot reviews are excluded.
+In files with foreign lines, the overview ruler marks the hunks that belong to the branch
+under review, so a painted ruler means the file is shared. **F7** and **Shift+F7** step
+through those hunks, skipping the rest and wrapping at either end, with the branch and
+position in the status bar (`hunk 3 of 7`). Outside a review diff the keys keep their
+built-in meaning. If every line the branch touched has been rewritten above it, the keys
+report that instead.
+
+### Uncommitted
+
+Shown only when the tree is dirty. Edits are grouped by the commit they'd be absorbed
+into; clicking one opens it at the first change.
+
+Edits that no commit depends on go in a separate **Unanchored** section, and absorb is
+blocked until they're placed explicitly with **Amend Into…**. Left alone they'd be filed
+under an arbitrary branch. With only one branch applied there's nowhere else they could
+go, so the section doesn't appear.
+
+### Pull Requests
+
+Your open PRs grouped by stack, bottom-first, since the branch nearest the target lands
+next. GitHub's own extension can't group them this way, as it doesn't know about stacks.
+
+Each row gets one circle, ordered by how much it needs from you:
+
+| | |
+| --- | --- |
+| 🔴 | CI failing, or changes requested |
+| 🟠 | approved, but threads still unresolved |
+| 🟡 | CI running |
+| 🔵 | review requested |
+| 🟢 | approved |
+| ⚪ | nothing pending |
+
+An approval still counts as one after the reviewer leaves a later comment, which is not
+how `gh` reports it by default. Bot reviews don't count, and the unresolved-thread count
+ignores bots and your own comments.
+
+PR data is fetched when the view first opens and when you press its refresh button,
+nothing else — it's the only part that touches the network. CI status is read locally, so
+it also updates when the window regains focus.
 
 ## Install
 
@@ -106,20 +115,20 @@ Then reload the window. Requires the [`but`](https://docs.gitbutler.com/cli-over
 
 **macOS-specific:** a Dock-launched VSCode doesn't inherit your shell `PATH`, so the
 extension prepends `/opt/homebrew/bin` and `/usr/local/bin` when spawning subprocesses.
-On Linux or Windows that prepend is harmless but you may need to adjust it if `but`
-or `gh` live elsewhere.
+On Linux or Windows that prepend is harmless, but you may need to adjust it if `but` or
+`gh` live elsewhere.
 
 ## Settings
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `butReview.ignoredChecks` | `[]` | CI checks to exclude from a branch's status, matched as case-insensitive substrings. Useful for a slow or flaky job you never act on. |
-| `butReview.botReviewers` | Codex, github-actions, Copilot | Reviewers whose approvals don't count. Logins ending in `[bot]` are always ignored; Codex reviews as `chatgpt-codex-connector`, with no such suffix, which is why this list exists. |
+| `butReview.botReviewers` | `chatgpt-codex-connector`, `github-actions`, `copilot-pull-request-reviewer` | Reviewers whose approvals and comments don't count. Logins ending in `[bot]` are always ignored; Codex has no such suffix, hence this list. |
 | `butReview.fileLayout` | `list` | `list` or `group`. Overridable per branch from the branch row. |
-| `butReview.demoteBranches` | `["docs"]` | Stacks whose every branch matches one of these tokens sort to the bottom regardless of activity. |
+| `butReview.demoteBranches` | `["docs"]` | Stacks whose every branch matches one of these hyphen-separated tokens sort to the bottom regardless of activity. |
 
-Six theme colours are contributed under `butReview.*` if you want to retune the icons,
-the dimming, or the ruler mark.
+Six theme colours are contributed under `butReview.*` for retuning the icons, the
+dimming, and the ruler mark.
 
 ## Development
 
@@ -127,15 +136,15 @@ the dimming, or the ruler mark.
 node smoke.js
 ```
 
-First cross-checks the manifest against the code — every declared command is registered,
-every menu reference resolves, every setting and theme colour read in code is declared,
-the container icon exists. That seam is invisible to JS testing: a command declared but
-never registered renders as a working button bound to nothing.
+It first cross-checks the manifest against the code: every declared command is
+registered, every menu reference resolves, every setting and theme colour read in code is
+declared, the container icon exists. None of that is visible to JS testing — a command
+declared but never registered renders as a working button bound to nothing.
 
-Then builds every tree row against your live GitButler workspace with a stubbed `vscode`
-module. It has caught a TDZ crash, a whole view deleted by a bad edit, hunk parsing
-broken by `diff.external`, and a dead absorb button — none of which `node --check` saw.
-Run it after touching anything.
+It then builds every tree row against your live GitButler workspace with a stubbed
+`vscode` module. This has caught a TDZ crash, a whole view deleted by a bad edit, hunk
+parsing broken by `diff.external`, and a dead absorb button, none of which `node --check`
+saw. Run it after any change.
 
 There is no build step — it's plain JS loaded directly.
 
@@ -143,18 +152,17 @@ There is no build step — it's plain JS loaded directly.
 extension.js      wiring: providers, decorations, commands
 src/exec.js       subprocess plumbing
 src/git.js        everything asked of git
-src/but.js        everything asked of the `but` CLI
+src/but.js        everything asked of the `but` and `gh` CLIs
 src/model.js      pure derivations — CI, reviews, stack names, layout
 src/items.js      every TreeItem the views render
 src/trees.js      the three TreeDataProviders
 ```
 
-Dependencies point one way, `exec` at the bottom and `extension` at the top, so no
-module reaches back up.
+Dependencies point one way, `exec` at the bottom and `extension` at the top.
 
-**Reloading:** `Developer: Reload Window` re-reads `extension.js`; the version number does
-not need bumping. The **icon** is the exception — Electron caches it by path, so changing
-`icon-*.svg` requires renaming the file and updating the manifest.
+**Reloading:** `Developer: Reload Window` re-reads `extension.js`; the version number
+doesn't need bumping. The icon is the exception — Electron caches it by path, so changing
+`icon-*.svg` means renaming the file and updating the manifest.
 
 ## Licence
 
