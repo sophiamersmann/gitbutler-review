@@ -118,9 +118,34 @@ function stackName(stack) {
     return prefix.length > 2 ? prefix : `Stack of ${names.length}`
 }
 
-const reviewKey = (branch, file) => `reviewed:${branch.name}:${file}`
+/** A stack read as one diff: merge base to stack tip, which is what the target
+ *  branch gets once the whole thing lands — a question per-branch review cannot
+ *  ask, since a helper added in one branch and used three above it is correct in
+ *  both diffs and wrong in neither.
+ *
+ *  Shaped as a branch so the whole file path takes it unchanged. `name` stays a
+ *  real ref because git is handed it; `label` is what the diff title says, since
+ *  the top branch's name would file the whole stack under it; `key` keeps the
+ *  ticks apart, because a shared file's stack diff is not any one branch's diff
+ *  of it. Keyed on the bottom branch — the top changes every time another is
+ *  pushed on, the bottom only when the stack lands. */
+function wholeStack(stack) {
+    const bottom = stack.branches.at(-1)
+    return {
+        name: stack.branches[0].name,
+        base: bottom.base,
+        label: `${stackName(stack)} (whole stack)`,
+        key: `stack:${bottom.name}`,
+        // an array, not a Set: a tree item's command arguments round-trip
+        // through the UI, and a Set comes back as {}
+        members: stack.branches.map((b) => b.name),
+    }
+}
 
-const layoutKey = (branch) => `layout:${branch.name}`
+// `key` is the whole-stack lens asking not to be confused with its own tip
+const reviewKey = (branch, file) => `reviewed:${branch.key ?? branch.name}:${file}`
+
+const layoutKey = (branch) => `layout:${branch.key ?? branch.name}`
 
 /** A per-branch choice, else the setting. No size heuristic: guessing was one
  *  mechanism too many next to a toggle that takes one click. */
@@ -152,7 +177,11 @@ const positions = (stacks) =>
  *  landing after it; one in another stack is parallel work on the same lines,
  *  and the two only meet when either of them lands. A branch *below* is dropped
  *  outright: its changes are in this branch's base, so they cancel out of the
- *  diff and naming it sends you hunting for lines that aren't there. */
+ *  diff and naming it sends you hunting for lines that aren't there.
+ *
+ *  The whole-stack lens needs no case of its own: it sits at its stack's tip, so
+ *  every member is below it and drops out, leaving only the other stacks — which
+ *  is exactly what is foreign to a diff that spans the whole stack. */
 function splitOverlap(branch, names, where) {
     const me = where.get(branch.name)
     const above = []
@@ -179,4 +208,4 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine, nextHunk, positions, splitOverlap }
+module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, groupsOf, hunkLine, nextHunk, positions, splitOverlap }

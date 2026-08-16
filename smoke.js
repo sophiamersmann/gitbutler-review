@@ -343,6 +343,70 @@ console.log(
     )
 }
 
+// the whole-stack lens: one diff over the stack, which must hold at least what
+// its biggest branch holds, and must not share a tick key with its own tip —
+// the two are different diffs of the same file
+{
+    const stack = stacks.find((s) => s.branches.length > 1)
+    if (!stack) console.log("ok: whole stack — skipped, no multi-branch stack")
+    else {
+        const ws = api.wholeStack(stack)
+        const wsFiles = await api.changedFiles(root, ws)
+        const biggest = Math.max(
+            ...stack.branches.map((b) => fileMap.get(b.name)?.length ?? 0)
+        )
+        const overlap = api.overlapMap(fileMap)
+        const rows = wsFiles.map((f) =>
+            api.fileItem(
+                {
+                    f,
+                    branch: ws,
+                    blob: f.blob,
+                    alsoIn: { above: [], other: [] },
+                    within: ws.members.filter((n) =>
+                        overlap.get(f.file)?.includes(n)
+                    ),
+                },
+                new Map(),
+                true
+            )
+        )
+        const multi = rows.filter((r) =>
+            r.description.includes(" branches")
+        ).length
+        // through the provider, so the wiring is covered and not just the row:
+        // the lens sits above the branches it reads, and counts them the same
+        const { BranchTree } = require("./src/trees")
+        const tree = new BranchTree(new Map())
+        tree.overlap = overlap
+        const kids = await tree.stackChildren(root, stack)
+        const row = kids[0]
+        // a branch below the tip is not "above" it, so the lens has no false
+        // foreign warnings of its own — only other stacks
+        const where = api.positions(stacks)
+        const foreign = api.splitOverlap(ws, ws.members, where)
+        const cases = [
+            [wsFiles.length >= biggest, true, "holds at least its biggest branch"],
+            [
+                api.reviewKey(ws, "a.ts") === api.reviewKey(stack.branches[0], "a.ts"),
+                false,
+                "tick keys differ from the tip's",
+            ],
+            [api.layoutKey(ws) === api.layoutKey(stack.branches[0]), false, "so do layout keys"],
+            [foreign.above.length + foreign.other.length, 0, "no member is foreign to it"],
+            [row.contextValue, "branch:list", "carries the layout toggle"],
+            [kids.length, stack.branches.length + 1, "one row above the branches"],
+            [row.description, `${wsFiles.length} files`, "the provider counts what the rows do"],
+        ].filter(([got, want]) => got !== want)
+        for (const [got, want, what] of cases)
+            console.log(`PROBLEM  whole stack: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+        if (cases.length) process.exitCode = 1
+        console.log(
+            `ok: whole stack "${row.label}" — ${wsFiles.length} files vs ${biggest} in its biggest branch, ${multi} built by several branches, ${7 - cases.length}/7 cases`
+        )
+    }
+}
+
 const groups = api.groupsOf(entries)
 const singles = groups.filter((g) => g.files.length === 1)
 const groupRows = groups.filter((g) => g.files.length > 1).map(api.groupItem)

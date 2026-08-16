@@ -49,6 +49,10 @@ function activate(context) {
 
     const names = (list) => list.map((b) => `\`${b}\``).join(", ")
 
+    // the whole-stack lens borrows its stack's tip as a ref, so `name` would
+    // file every one of its files under the top branch alone
+    const shown = (branch) => branch.label ?? branch.name
+
     // The diff editor already owns the background channel, so the marker lives
     // in opacity and a left rail — see paneRanges above. Not the ruler: that
     // strip is spent on the hunks below.
@@ -226,7 +230,7 @@ function activate(context) {
                 // touched rewritten above it — say so rather than sit there
                 if (!m.own.length)
                     return vscode.window.setStatusBarMessage(
-                        `${m.branch.name} — nothing here is only this branch's`,
+                        `${shown(m.branch)} — nothing here is only this branch's`,
                         2000
                     )
                 const at = nextHunk(m.own, editor.selection.active.line, step)
@@ -236,7 +240,7 @@ function activate(context) {
                 // the count is the part the minimap was standing in for: how
                 // much of this file is left to read
                 vscode.window.setStatusBarMessage(
-                    `${m.branch.name} — hunk ${at + 1} of ${m.own.length}`,
+                    `${shown(m.branch)} — hunk ${at + 1} of ${m.own.length}`,
                     2000
                 )
             })
@@ -280,7 +284,7 @@ function activate(context) {
                         // its row agree on whose work it is
                         hover: new vscode.MarkdownString(
                             [
-                                `Not part of \`${branch.name}\`.`,
+                                `Not part of \`${shown(branch)}\`.`,
                                 alsoIn.other?.length &&
                                     `Also changed by ${names(alsoIn.other)}, in another stack.`,
                                 alsoIn.above?.length &&
@@ -295,7 +299,7 @@ function activate(context) {
                 await openDiff(
                     uri(BASE, f.file, branch.base),
                     right,
-                    `${path.basename(f.file)} — ${branch.name}`
+                    `${path.basename(f.file)} — ${shown(branch)}`
                 )
                 paint()
             }

@@ -150,6 +150,39 @@ function branchItem(branch, overrides) {
     return item
 }
 
+/** The stack read as one diff, as a row beside its branches rather than a mode
+ *  on top of them: it is a lens you want before a push and not otherwise, and a
+ *  row cannot be a state you forget you are in — nor does it cost you the
+ *  per-branch CI and PR status that the rows below it are there to carry. */
+function wholeStackItem(ws, stack, files, overrides) {
+    const item = new vscode.TreeItem(
+        `All ${stack.branches.length} branches`,
+        vscode.TreeItemCollapsibleState.Collapsed
+    )
+    item.description = `${files} file${files === 1 ? "" : "s"}`
+    // the stack's colour, so it reads as belonging to the row above; a compare
+    // glyph rather than a branch one, because it is not a branch
+    item.iconPath = new vscode.ThemeIcon(
+        "git-compare",
+        new vscode.ThemeColor("butReview.stackIcon")
+    )
+    item.tooltip = new vscode.MarkdownString(
+        [
+            `**Whole stack** — \`${stackName(stack)}\``,
+            `${files} file${files === 1 ? "" : "s"} against the merge base — what \`master\` gets once all ${stack.branches.length} branches land.`,
+            "",
+            "Ticks here are counted apart from the branch rows': a shared file's stack diff is not any one branch's diff of it.",
+        ]
+            .filter(Boolean)
+            .join("  \n")
+    )
+    // the same contextValue shape as a branch, so the layout toggle applies here
+    // too — 88 files flat is exactly when grouping earns its keep
+    item.contextValue = `branch:${layoutFor(ws, overrides)}`
+    item.branch = ws
+    return item
+}
+
 function groupItem(group) {
     const parent = path.dirname(group.dir)
     const item = new vscode.TreeItem(
@@ -170,7 +203,7 @@ function groupItem(group) {
 }
 
 function fileItem(entry, reviewed, showDir) {
-    const { f, branch, blob, alsoIn } = entry
+    const { f, branch, blob, alsoIn, within = [] } = entry
     const { above = [], other = [] } = alsoIn ?? {}
     // "!" turns the row's badge to the warning colour, which any foreign hunk
     // earns: it says the pane will hold lines that are not this branch's
@@ -180,6 +213,9 @@ function fileItem(entry, reviewed, showDir) {
     const churn = f.adds === "-" ? "binary" : `+${f.adds} −${f.dels}` // numstat marks binaries with -
     item.description = [
         churn,
+        // whole-stack lens only: this file was built in steps, which is where a
+        // helper's signature drifts from the calls the branch below it wrote
+        within.length > 1 ? `in ${within.length} branches` : "",
         // only another stack is named. A branch above is your own work landing
         // after yours, and in a stack where that is true of every file the note
         // was the same sentence twenty times over — the colour already says it
@@ -198,6 +234,9 @@ function fileItem(entry, reviewed, showDir) {
                 : "",
             above.length
                 ? `\n↑ Continued by **${above.join("**, **")}** above it in this stack, already rebased onto yours. The right-hand pane is the workspace file, so it shows those lines too.`
+                : "",
+            within.length > 1
+                ? `\n⧉ Built by **${within.join("**, **")}**. The pane shows their net effect, which is the one thing no single branch's review does.`
                 : "",
         ]
             .filter(Boolean)
@@ -279,4 +318,4 @@ function prItem(row) {
     return item
 }
 
-module.exports = { BASE, FILE, PR, DECORATION, unanchoredGroupItem, commitGroupItem, dirtyFileItem, stackItem, branchItem, groupItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, PR, DECORATION, unanchoredGroupItem, commitGroupItem, dirtyFileItem, stackItem, branchItem, wholeStackItem, groupItem, fileItem, prStackItem, prItem }

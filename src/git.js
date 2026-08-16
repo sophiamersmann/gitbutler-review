@@ -142,4 +142,4 @@ function overlapMap(files) {
     return map
 }
 
-module.exports = { EMPTY_TREE, changedFiles, paneRanges, contaminated, branchFiles, overlapMap }
+module.exports = { EMPTY_TREE, diffNames, changedFiles, paneRanges, contaminated, branchFiles, overlapMap }

@@ -7,7 +7,8 @@ have no idea that's happening.
 It answers three questions the existing tools can't:
 
 - **What does this branch actually change**, versus the branch below it in its stack —
-  in a diff you can edit.
+  in a diff you can edit. Or the whole stack at once, versus the target branch, which is
+  the only view of it that matches what lands.
 - **Where will this uncommitted edit land**, and is that because something depends on it
   or because absorb had to guess.
 - **Which of my pull requests can I merge**, given that only the bottom of a stack is
@@ -31,9 +32,23 @@ sorted by recent activity. Click a file for an editable diff, or tick it off onc
 reviewed. Files open one at a time; there is no bulk-open, since a branch is read file by
 file anyway.
 
+A stack of more than one branch also carries an **All N branches** row above its branches:
+the same review, but of one diff from the merge base to the stack tip — what the target
+branch gets once the whole stack lands. Per-branch review can't ask that question. A
+helper added in one branch and called three above it is correct in both diffs and wrong in
+neither; debug code added in the second branch and removed in the fourth is in two reviews
+and correctly in none of this one. Files built by more than one branch say so (`in 3
+branches`), since that is where a signature drifts from the calls written below it. It is
+a pre-push pass rather than the daily loop — on a five-branch stack it
+is one long read — which is why it's a row you click and not a mode you can be lost in,
+and why the branch rows keep their CI and PR status beside it.
+
 Ticks are stored per repo and keyed on the file's blob SHA at the branch tip, so they
 survive a reload but clear themselves as soon as the branch's version of that file
-changes — absorbing an edit into a file you had already reviewed un-ticks it.
+changes — absorbing an edit into a file you had already reviewed un-ticks it. The
+whole-stack lens keeps its own ticks, keyed on the stack's bottom branch: a shared file's
+stack diff is not any one branch's diff of it, so a tick from either read would be a claim
+about the other you never made.
 
 Files are shown as a flat list, or grouped by directory when you ask for it. A directory holding a single file stays a plain row rather than becoming a group you
 have to expand. Otherwise a group's label is the directory's last segment with the parent

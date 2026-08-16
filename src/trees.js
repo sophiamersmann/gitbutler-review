@@ -3,9 +3,9 @@
 const vscode = require("vscode")
 const { listPrs, reviewThreads, stacksOf, status, uncommittedPlan } = require("./but")
 const { repoRoot } = require("./exec")
-const { branchFiles, changedFiles, contaminated, overlapMap } = require("./git")
-const { branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, prItem, prStackItem, stackItem, unanchoredGroupItem } = require("./items")
-const { groupsOf, layoutFor, positions, splitOverlap } = require("./model")
+const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
+const { branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, prItem, prStackItem, stackItem, unanchoredGroupItem, wholeStackItem } = require("./items")
+const { groupsOf, layoutFor, positions, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -43,8 +43,7 @@ class BranchTree extends Tree {
         if (!root) return []
         try {
             if (!node) return await this.topLevel(root)
-            // top-first, as `but status` and the GitButler app show a stack
-            if (node.stack) return node.stack.branches.map((b) => branchItem(b, this.overrides))
+            if (node.stack) return await this.stackChildren(root, node.stack)
             if (node.group)
                 return node.group.map((e) => fileItem(e, this.reviewed, false))
 
@@ -56,6 +55,12 @@ class BranchTree extends Tree {
                 f,
                 branch: node.branch,
                 blob: f.blob,
+                // whole-stack lens only: which of the stack's own branches build
+                // this file. Not gated on `dirty` — a file assembled in steps is
+                // worth flagging whether or not anyone else touches it too
+                within: (node.branch.members ?? []).filter((n) =>
+                    this.overlap?.get(f.file)?.includes(n)
+                ),
                 // names come from the overlap map, but only for files that
                 // actually carry someone else's hunks — and split, because a
                 // branch above in your own stack is not the same news as one
@@ -88,6 +93,19 @@ class BranchTree extends Tree {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
         }
+    }
+
+    /** The stack's branches, top-first as `but status` and the GitButler app
+     *  show them, under the one row that reads all of them at once. No guard for
+     *  a single branch: a one-branch stack renders as its branch, so the two
+     *  would be the same diff and this is never reached with one. */
+    async stackChildren(root, stack) {
+        const ws = wholeStack(stack)
+        const files = await diffNames(root, ws.base, ws.name)
+        return [
+            wholeStackItem(ws, stack, files.length, this.overrides),
+            ...stack.branches.map((b) => branchItem(b, this.overrides)),
+        ]
     }
 
     /** A one-branch stack is shown as the branch itself — no pointless wrapper. */
