@@ -48,15 +48,25 @@ function activate(context) {
         vscode.commands.executeCommand("vscode.diff", left, right, title, opts)
 
     // The diff editor already owns the background channel, so the marker lives
-    // in opacity, a left rail and the ruler instead — see foreignRanges above.
+    // in opacity and a left rail — see paneRanges above. Not the ruler: that
+    // strip is spent on the hunks below.
     const foreign = vscode.window.createTextEditorDecorationType({
         isWholeLine: true,
         opacity: "0.6",
         borderWidth: "0 0 0 2px",
         borderStyle: "solid",
         borderColor: new vscode.ThemeColor("butReview.foreignHunkBorder"),
-        overviewRulerLane: vscode.OverviewRulerLane.Right,
-        overviewRulerColor: new vscode.ThemeColor("butReview.foreignHunkBorder"),
+    })
+
+    // The minimap already shows every change in the file, so the ruler is worth
+    // more as the map of the ones that are this branch's — the same hunks F7
+    // walks, so a mark is a stop. Ruler only: the pane's own colours are the
+    // diff's to give. Painted only where another branch muddies the file: with
+    // nothing foreign in it these would mark what the diff already marks, in one
+    // flat colour over its green and red, which is worse than leaving it alone.
+    const mine = vscode.window.createTextEditorDecorationType({
+        overviewRulerLane: vscode.OverviewRulerLane.Full,
+        overviewRulerColor: new vscode.ThemeColor("butReview.ownHunkMark"),
     })
 
     /** uri string -> {branch, file, ranges, own, hover}; kept so open diffs can
@@ -94,6 +104,8 @@ function activate(context) {
                       }))
                     : []
             )
+            // so an unpainted ruler is itself the answer: nobody else is in here
+            editor.setDecorations(mine, m?.ranges.length ? m.own : [])
         }
     }
 

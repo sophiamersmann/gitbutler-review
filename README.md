@@ -45,12 +45,17 @@ be grouped while a three-file fix stays a list.
 `butReview.fileLayout` sets the default for branches you haven't chosen for.
 
 Because the right-hand pane is the *workspace* file rather than the branch tip, other
-applied branches can contribute hunks to it. Those lines are dimmed with a left rail and
-ruler marks, and files carrying them are flagged in the tree.
+applied branches can contribute hunks to it. Those lines are dimmed with a left rail, and
+files carrying them are flagged in the tree.
 
-The minimap can't be dimmed to match — extensions have no say over what it paints — so
-**F7** and **Shift+F7** walk this branch's own hunks instead, skipping everyone else's
-and wrapping at either end. The status bar names the branch and counts (`hunk 3 of 7`),
+The minimap can't be dimmed to match — extensions have no say over what it paints — and
+it already shows every change in the file anyway. So the overview ruler is spent on the
+opposite question: one mark per hunk that *is* this branch's, and nothing else in that
+strip. It appears only in files another branch has also touched; where every hunk is
+yours the diff editor's own marks already say so, in colours that distinguish an
+insertion from a deletion, and painting over them would say less. A painted ruler is
+therefore its own signal: this file is shared. **F7** and **Shift+F7** walk those same
+hunks, skipping everyone else's and wrapping at either end. The status bar names the branch and counts (`hunk 3 of 7`),
 which is the part scrolling the minimap was standing in for. Outside a review diff the
 keys keep their built-in meaning of "next difference, whoever made it". A branch at the
 bottom of a busy stack can have every line it touched rewritten above it; there the keys
@@ -90,8 +95,8 @@ or `gh` live elsewhere.
 | `butReview.fileLayout` | `list` | `list` or `group`. Overridable per branch from the branch row. |
 | `butReview.demoteBranches` | `["docs"]` | Stacks whose every branch matches one of these tokens sort to the bottom regardless of activity. |
 
-Five theme colours are contributed under `butReview.*` if you want to retune the icons or
-the dimming.
+Six theme colours are contributed under `butReview.*` if you want to retune the icons,
+the dimming, or the ruler mark.
 
 ## Development
 

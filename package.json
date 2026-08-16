@@ -20,6 +20,15 @@
                 }
             },
             {
+                "id": "butReview.ownHunkMark",
+                "description": "Overview ruler mark for the hunks the branch under review put there — the same ones F7 walks",
+                "defaults": {
+                    "dark": "charts.blue",
+                    "light": "charts.blue",
+                    "highContrast": "charts.blue"
+                }
+            },
+            {
                 "id": "butReview.stackIcon",
                 "description": "Icon colour for stack rows",
                 "defaults": {
