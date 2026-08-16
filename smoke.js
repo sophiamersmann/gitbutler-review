@@ -239,18 +239,25 @@ console.log(`ok: ${prRows} pr rows`)
         [circle(thread(false, "me")), "🟢", "your own threads don't count"],
         [api.rollup(undefined, undefined, 2)[0], "⚪", "unreviewed stays as-is"],
         [String(open(thread(false, "a"), thread(false, "b"))), "2", "counted"],
+        // a conflict is work of yours however healthy the rest of the PR looks,
+        // and UNKNOWN — which is what GitHub says until it has computed the
+        // answer — must not redden a PR that has only just been opened
+        [api.rollup("passing", "approved", 0, true)[0], "🔴", "conflicting beats approved"],
+        [api.rollup("passing", "approved", 0, false)[0], "🟢", "not conflicting is left alone"],
+        [api.rollup("passing", "approved", 0)[0], "🟢", "no conflict data yet reads as none"],
     ]
     const bad = cases.filter(([got, want]) => got !== want)
     for (const [got, want, what] of bad)
         console.log(`PROBLEM  rollup: ${what} gave ${got}, want ${want}`)
     // the rows above were built before this resolved, exactly as the panel
-    // does it — so this also proves prItem survives a PR with no thread data
-    await api.reviewThreads(root, prs)
-    if (prs.some((p) => p.reviewThreads === undefined))
-        console.log("PROBLEM  reviewThreads: some PRs came back unfilled")
+    // does it — so this also proves prItem survives a PR with no detail data
+    await api.prDetails(root, prs)
+    if (prs.some((p) => p.reviewThreads === undefined || p.conflicting === undefined))
+        console.log("PROBLEM  prDetails: some PRs came back unfilled")
     if (bad.length) process.exitCode = 1
     const withThreads = prs.filter((p) => p.reviewThreads?.length).length
-    console.log(`ok: ${cases.length} rollup cases, ${withThreads} live PRs with threads`)
+    const conflicting = prs.filter((p) => p.conflicting).length
+    console.log(`ok: ${cases.length} rollup cases, ${withThreads} live PRs with threads, ${conflicting} conflicting`)
 }
 
 // the biggest branch, so the row builders get a real workout

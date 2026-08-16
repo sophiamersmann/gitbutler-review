@@ -281,7 +281,7 @@ function prItem(row) {
     const decision = humanDecision(pr)
     const ci = ciState(branch)
     const open = openThreads(pr)
-    const [circle, summary] = rollup(ci.state, decision, open)
+    const [circle, summary] = rollup(ci.state, decision, open, pr.conflicting)
 
     // branch names are short and scannable; the PR title is the elaboration
     const item = new vscode.TreeItem(branch.name)
@@ -306,6 +306,9 @@ function prItem(row) {
             `${circle}  **${summary}**`,
             `CI: ${ci.label ?? "no checks"}`,
             `Review: ${decision ?? "none requested"}${pr.isDraft ? " · draft" : ""}${open ? ` · ${open} unresolved thread${open > 1 ? "s" : ""}` : ""}`,
+            // otherwise a red dot on a PR with green CI and no changes
+            // requested has nothing here that accounts for it
+            ...(pr.conflicting ? ["Conflicts with the base branch"] : []),
             ...ci.failing.map((c) => `- ✗ ${c}`),
         ].join("  \n")
     )

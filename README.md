@@ -88,7 +88,7 @@ Each row gets one circle, ordered by how much it needs from you:
 
 | | |
 | --- | --- |
-| 🔴 | CI failing, or changes requested |
+| 🔴 | CI failing, changes requested, or conflicts with the base |
 | 🟠 | approved, but threads still unresolved |
 | 🟡 | CI running |
 | 🔵 | review requested |
@@ -97,7 +97,10 @@ Each row gets one circle, ordered by how much it needs from you:
 
 An approval still counts as one after the reviewer leaves a later comment, which is not
 how `gh` reports it by default. Bot reviews don't count, and the unresolved-thread count
-ignores bots and your own comments.
+ignores bots and your own comments. Conflicts and thread resolution both come from one
+GraphQL call, the only place either is exposed; GitHub computes the merge state
+asynchronously and says it doesn't know until it has, which reads here as no conflict
+rather than reddening a PR you just opened.
 
 PR data is fetched when the view first opens and when you press its refresh button,
 nothing else — it's the only part that touches the network. CI status is read locally, so

@@ -8,7 +8,9 @@ const { cfg } = require("./exec")
 // pair, so it already fills the 2-character badge budget on its own. Ordered by
 // what it asks of you, most demanding first.
 const ROLLUP = [
-    ["🔴", "needs work", (ci, d) => ci === "failing" || d === "changes requested"],
+    // conflicts belong here rather than on a colour of their own: the rung is
+    // "work that is yours", and a conflict with the base is exactly that
+    ["🔴", "needs work", (ci, d, open, conflicting) => ci === "failing" || d === "changes requested" || conflicting],
     // an approval with threads still open is a to-do of yours, so it outranks
     // CI: the tick on GitHub says done, the threads say otherwise
     ["🟠", "approved, comments unresolved", (ci, d, open) => d === "approved" && open > 0],
@@ -18,8 +20,8 @@ const ROLLUP = [
     ["⚪", "nothing pending", () => true],
 ]
 
-const rollup = (ci, decision, open = 0) =>
-    ROLLUP.find(([, , when]) => when(ci, decision, open))
+const rollup = (ci, decision, open = 0, conflicting = false) =>
+    ROLLUP.find(([, , when]) => when(ci, decision, open, conflicting))
 
 /** CI summary with the noisy checks dropped, so one flaky job doesn't colour
  *  the whole branch. Recomputes the conclusion rather than trusting `but`'s,

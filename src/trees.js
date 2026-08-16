@@ -1,7 +1,7 @@
 // The three TreeDataProviders. Each one fetches, then hands rows to items.js.
 
 const vscode = require("vscode")
-const { listPrs, reviewThreads, stacksOf, status, uncommittedPlan } = require("./but")
+const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
 const { branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, prItem, prStackItem, stackItem, unanchoredGroupItem, wholeStackItem } = require("./items")
@@ -173,11 +173,11 @@ class PrTree extends Tree {
             // the promise is what's cached, not its result: two overlapping
             // refreshes would otherwise both get past the await and fetch twice
             const prs = await (this.cache ??= listPrs(root))
-            // thread resolution costs another round trip and only ever changes
-            // a circle, so don't hold the rows for it — fill the same PR
-            // objects in the background and repaint. `changed.fire()`, not
+            // threads and conflict state cost another round trip and only ever
+            // change a circle, so don't hold the rows for them — fill the same
+            // PR objects in the background and repaint. `changed.fire()`, not
             // `refresh()`, or the repaint would clear the cache and loop.
-            this.threads ??= reviewThreads(root, prs)
+            this.threads ??= prDetails(root, prs)
                 .catch(() => {})
                 .then(() => this.changed.fire())
 
