@@ -2,9 +2,9 @@
 
 const vscode = require("vscode")
 const path = require("path")
-const { status, uncommittedPlan } = require("./src/but")
+const { stacksOf, status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
-const { EMPTY_TREE, paneRanges } = require("./src/git")
+const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
 const { BASE, DECORATION, FILE, PR } = require("./src/items")
 const { layoutKey, nextHunk } = require("./src/model")
 const { BranchTree, PrTree, UncommittedTree } = require("./src/trees")
@@ -52,15 +52,17 @@ function activate(context) {
     // file every one of its files under the top branch alone
     const shown = (branch) => branch.label ?? branch.name
 
-    // The diff editor already owns the background channel, so the marker lives
-    // in opacity and a left rail — see paneRanges above. Not the ruler: that
-    // strip is spent on the hunks below.
+    // A tint over the diff's own green rather than instead of it — the alpha is
+    // load-bearing, an opaque colour would erase that the line is an addition at
+    // all. The ruler mark below stays the branch's own. The text is faded but
+    // not recoloured: it keeps its syntax colours, because a foreign hunk is
+    // still code somebody has to read.
     const foreign = vscode.window.createTextEditorDecorationType({
         isWholeLine: true,
+        backgroundColor: new vscode.ThemeColor(
+            "butReview.foreignHunkBackground"
+        ),
         opacity: "0.6",
-        borderWidth: "0 0 0 2px",
-        borderStyle: "solid",
-        borderColor: new vscode.ThemeColor("butReview.foreignHunkBorder"),
     })
 
     // The minimap already shows every change in the file, so the ruler is worth
@@ -74,10 +76,33 @@ function activate(context) {
         overviewRulerColor: new vscode.ThemeColor("butReview.ownHunkMark"),
     })
 
-    /** uri string -> {branch, file, ranges, own, hover}; kept so open diffs can
-     *  be recomputed after an absorb rather than showing stale dimming, and so
-     *  F7 has the branch's own hunks to walk */
+    /** uri string -> {branch, candidates, file, ranges, own, notes, hover}; kept
+     *  so open diffs can be recomputed after an absorb rather than showing stale
+     *  dimming, and so F7 has the branch's own hunks to walk */
     const marked = new Map()
+
+    /** Everything the pane's marks are drawn from, in one call: the two hunk
+     *  sets, and who put each of them there. */
+    const paneState = async (root, branch, candidates, file) => {
+        const [r, notes] = await Promise.all([
+            paneRanges(root, branch, file).catch(() => ({
+                foreign: [],
+                own: [],
+            })),
+            hunkOwners(root, candidates, file).catch(() => []),
+        ])
+        const shows = [...r.foreign, ...r.own]
+        return {
+            ranges: r.foreign,
+            own: r.own,
+            // a branch can undo what one below it did, which leaves it a hunk of
+            // its own over lines the pane shows as untouched — and a note there
+            // names a change the reader cannot see
+            notes: notes.filter((n) =>
+                shows.some((x) => x.intersection(n.range))
+            ),
+        }
+    }
 
     // Every entry, not just the visible ones: a backgrounded diff is painted
     // from `marked` the moment you switch back to its tab.
@@ -85,13 +110,12 @@ function activate(context) {
         const root = repoRoot()
         if (!root) return
         await Promise.all(
-            [...marked].map(async ([key, m]) => {
-                const r = await paneRanges(root, m.branch, m.file).catch(() => ({
-                    foreign: [],
-                    own: [],
-                }))
-                marked.set(key, { ...m, ranges: r.foreign, own: r.own })
-            })
+            [...marked].map(async ([key, m]) =>
+                marked.set(key, {
+                    ...m,
+                    ...(await paneState(root, m.branch, m.candidates, m.file)),
+                })
+            )
         )
         paint()
     }
@@ -286,7 +310,8 @@ function activate(context) {
         vscode.commands.registerCommand(
             "butReview.openFile",
             async (branch, f, alsoIn = {}) => {
-                const live = vscode.Uri.file(path.join(repoRoot(), f.file))
+                const root = repoRoot()
+                const live = vscode.Uri.file(path.join(root, f.file))
                 // a deleted file has no workspace side; show it against nothing
                 const right =
                     f.status === "D" ? uri(BASE, f.file, EMPTY_TREE) : live
@@ -294,14 +319,26 @@ function activate(context) {
                 // an entry even when nothing is foreign: `ranges` empty repaints
                 // as cleared, and `own` is what F7 walks
                 if (f.status !== "D") {
-                    const r = await paneRanges(repoRoot(), branch, f.file).catch(
-                        () => ({ foreign: [], own: [] })
-                    )
+                    // who a note could name. `above` and `other` are who else is
+                    // in the pane, so a branch's review names only what isn't
+                    // its own; `members` is the whole-stack lens asking for its
+                    // own hunks to be named too, which is the one review where
+                    // "this is yours" is not the whole answer. A branch below is
+                    // in neither list: its work is in the base, so the pane
+                    // never shows it.
+                    const named = new Set([
+                        ...(alsoIn.above ?? []),
+                        ...(alsoIn.other ?? []),
+                        ...(branch.members ?? []),
+                    ])
+                    const candidates = stacksOf(await status(root))
+                        .flatMap((s) => s.branches)
+                        .filter((b) => named.has(b.name))
                     marked.set(right.toString(), {
                         branch,
+                        candidates,
                         file: f.file,
-                        ranges: r.foreign,
-                        own: r.own,
+                        ...(await paneState(root, branch, candidates, f.file)),
                         // named the way the tree names them, so a grey line and
                         // its row agree on whose work it is
                         hover: new vscode.MarkdownString(

@@ -65,10 +65,10 @@ async function changedFiles(root, branch) {
     return files.map((f) => ({ ...f, ...churn.get(f.file) }))
 }
 
-/** The hunks of `git diff a b -- file`, as ranges in b's line numbers. A hunk
- *  that only deletes lines has none of its own, so it comes back as an empty
- *  range at the seam it left behind: nothing to decorate, but somewhere to
- *  jump to. */
+/** The hunks of `git diff a b -- file`, as ranges in b's line numbers, or in the
+ *  worktree's when `b` is left out. A hunk that only deletes lines has none of
+ *  its own, so it comes back as an empty range at the seam it left behind:
+ *  nothing to decorate, but somewhere to jump to. */
 async function hunkRanges(root, a, b, file) {
     const out = await git(root, [
         "diff",
@@ -76,7 +76,7 @@ async function hunkRanges(root, a, b, file) {
         "-U0",
         "--no-renames",
         a,
-        b,
+        ...(b ? [b] : []),
         "--",
         file,
     ])
@@ -98,20 +98,89 @@ async function hunkRanges(root, a, b, file) {
 }
 
 /** Both sets of hunks the right-hand pane holds, in its line numbers: what this
- *  branch put there, and what the other applied branches contribute. Compared
- *  against HEAD (the workspace commit) rather than the worktree, so your own
- *  in-progress edits aren't attributed to somebody else. A hunk of the whole
- *  base→HEAD diff that overlaps a foreign one isn't ours to claim. */
+ *  branch put there, and what the other applied branches contribute.
+ *
+ *  Everything is measured against the worktree, because that is what the pane
+ *  shows. Measuring against HEAD instead — the workspace commit, which holds no
+ *  uncommitted work — put every mark in a dirty file as many lines high as you
+ *  had added above it, and this view exists to be used while the tree is dirty.
+ *
+ *  The cost is a third diff: against the worktree, your own uncommitted edits
+ *  arrive inside the branch→pane diff and would read as somebody else's, so
+ *  HEAD→worktree names them and they are dropped from the foreign set. A hunk
+ *  of the whole base→pane diff that overlaps a foreign one isn't ours to claim. */
 async function paneRanges(root, branch, file) {
-    const [foreign, all] = await Promise.all([
-        hunkRanges(root, branch.name, "HEAD", file),
-        hunkRanges(root, branch.base, "HEAD", file),
+    const [theirs, all, dirty] = await Promise.all([
+        hunkRanges(root, branch.name, undefined, file),
+        hunkRanges(root, branch.base, undefined, file),
+        hunkRanges(root, "HEAD", undefined, file),
     ])
     // an empty range is a deletion seam: real enough to jump to, but dimming a
     // line nobody touched would be a lie, and subtracting one would swallow the
     // hunk of ours that happens to sit on it
-    const dim = foreign.filter((r) => !r.isEmpty)
-    return { foreign: dim, own: all.filter((r) => !dim.some((f) => f.intersection(r))) }
+    const foreign = theirs.filter(
+        (r) => !r.isEmpty && !dirty.some((d) => d.intersection(r))
+    )
+    return {
+        foreign,
+        // the ruler is the one place a deletion can still be seen, so the seam
+        // gets the line it collapsed onto rather than no width at all
+        own: all
+            .filter((r) => !foreign.some((f) => f.intersection(r)))
+            .map((r) =>
+                r.isEmpty
+                    ? new vscode.Range(
+                          r.start.line,
+                          0,
+                          r.start.line,
+                          Number.MAX_SAFE_INTEGER
+                      )
+                    : r
+            ),
+    }
+}
+
+/** Which branch put each hunk of the pane there, as `{range, name}` in the
+ *  pane's line numbers. The same two diffs `paneRanges` runs, per candidate: a
+ *  branch owns what its base doesn't have and the worktree still does.
+ *
+ *  Subtracts the deletion seams too, which is the one place this parts company
+ *  with `paneRanges`. There an empty range is kept, so a hunk that merely sits
+ *  on a seam isn't swallowed; here it has to go, because every branch below the
+ *  one that deleted the lines still shows the seam and would claim the deletion
+ *  as its own. The cost is the mirror image — a branch's hunk goes unnamed when
+ *  somebody else's deletion lands inside it — and an unnamed hunk is the better
+ *  of the two failures.
+ *
+ *  Uncommitted work needs no case of its own: it is ahead of every branch, so it
+ *  is in every subtrahend and nobody ends up claiming it.
+ *
+ *  Who the candidates are is what makes a note match the review it sits in: for
+ *  a single branch they are the others contributing to the pane, so only foreign
+ *  hunks are named; for the whole-stack lens they are its members too, so every
+ *  hunk is. */
+async function hunkOwners(root, branches, file) {
+    const claims = (
+        await Promise.all(
+            branches.map(async (b) => {
+                const [all, after] = await Promise.all([
+                    hunkRanges(root, b.base, undefined, file),
+                    hunkRanges(root, b.name, undefined, file),
+                ])
+                return all
+                    .filter((r) => !after.some((a) => a.intersection(r)))
+                    .map((range) => ({ range, name: b.name }))
+            })
+        )
+    ).flat()
+    // two branches claiming the same lines made the same edit; the pane holds
+    // one version of it, so a name would be a guess
+    return claims.filter(
+        (c) =>
+            !claims.some(
+                (o) => o.name !== c.name && o.range.intersection(c.range)
+            )
+    )
 }
 
 /** Files whose workspace copy differs from this branch's tip — precisely what
@@ -142,4 +211,4 @@ function overlapMap(files) {
     return map
 }
 
-module.exports = { EMPTY_TREE, diffNames, changedFiles, paneRanges, contaminated, branchFiles, overlapMap }
+module.exports = { EMPTY_TREE, diffNames, changedFiles, paneRanges, hunkOwners, contaminated, branchFiles, overlapMap }

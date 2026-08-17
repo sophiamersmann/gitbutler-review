@@ -11,12 +11,12 @@
     "contributes": {
         "colors": [
             {
-                "id": "butReview.foreignHunkBorder",
-                "description": "Marks lines in the review pane that come from another applied branch, not the one being reviewed",
+                "id": "butReview.foreignHunkBackground",
+                "description": "Tint over lines in the review pane that come from another applied branch, not the one being reviewed. Needs an alpha channel: it sits over the diff's own colours",
                 "defaults": {
-                    "dark": "editorOverviewRuler.incomingContentForeground",
-                    "light": "editorOverviewRuler.incomingContentForeground",
-                    "highContrast": "editorOverviewRuler.incomingContentForeground"
+                    "dark": "#8957e533",
+                    "light": "#8957e52b",
+                    "highContrast": "#8957e54d"
                 }
             },
             {

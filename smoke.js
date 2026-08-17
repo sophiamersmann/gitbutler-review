@@ -69,7 +69,7 @@ const stub = {
         }
     },
     Selection: class {},
-    OverviewRulerLane: { Right: 2 },
+    OverviewRulerLane: { Left: 1, Center: 2, Right: 4, Full: 7 },
     window: {
         createTextEditorDecorationType: () => ({}),
         visibleTextEditors: [],
@@ -358,6 +358,37 @@ console.log(
     console.log(
         `ok: ${own} own hunks, ${foreign} foreign across ${sample.length} files, all ascending; 5 F7 walk cases`
     )
+
+    // The pane is the file on disk, so the ranges have to be in its line
+    // numbers. Measured against HEAD they were as many lines high as the
+    // uncommitted work above them — invisible while the tree is clean, which is
+    // why this only means anything when a sampled file is dirty.
+    const dirty = new Set(
+        execFileSync("git", ["diff", "--name-only", "HEAD"], { encoding: "utf8" })
+            .split("\n")
+            .filter(Boolean)
+    )
+    const probe = sample.find((e) => dirty.has(e.f.file))
+    if (!probe)
+        console.log("ok: pane coordinates — skipped, no dirty file in the sample")
+    else {
+        const { own: mine } = await api.paneRanges(root, branch, probe.f.file)
+        const truth = new Set(
+            [
+                ...execFileSync(
+                    "git",
+                    ["diff", "--no-ext-diff", "-U0", "--no-renames", branch.base, "--", probe.f.file],
+                    { encoding: "utf8", maxBuffer: 1e8 }
+                ).matchAll(/^@@ -\S+ \+(\d+)/gm),
+            ].map((m) => Number(m[1]))
+        )
+        const stray = mine.filter((r) => !truth.has(r.start.line + 1))
+        if (stray.length) {
+            console.log(`PROBLEM  pane coordinates: ${stray.length} of ${mine.length} ranges in ${probe.f.file} are not where the worktree has them`)
+            process.exitCode = 1
+        } else
+            console.log(`ok: pane coordinates — ${mine.length} ranges land on the worktree's own lines (${probe.f.file} is dirty)`)
+    }
 }
 
 // the whole-stack lens: one diff over the stack, which must hold at least what
@@ -420,6 +451,56 @@ console.log(
         if (cases.length) process.exitCode = 1
         console.log(
             `ok: whole stack "${row.label}" — ${wsFiles.length} files vs ${biggest} in its biggest branch, ${multi} built by several branches, ${7 - cases.length}/7 cases`
+        )
+    }
+}
+
+// Which branch a note names. The whole-stack lens is where the rule bites: its
+// own hunks are its members' hunks, so every one of them has to find a claimant
+// — a hunk with no name in a review that promises one is the failure worth
+// catching, and it is what a boundary mismatch between the two diffs looks like.
+{
+    const stack = stacks.find((s) => s.branches.length > 1)
+    const overlap = api.overlapMap(fileMap)
+    // an uncommitted hunk is ahead of every branch and so is claimed by none of
+    // them, which a dirty file cannot tell apart from a hunk gone unattributed
+    const dirtyPaths = new Set(
+        execFileSync("git", ["diff", "--name-only", "HEAD"], { encoding: "utf8" })
+            .split("\n")
+            .filter(Boolean)
+    )
+    const ws = stack && api.wholeStack(stack)
+    const built = (p) =>
+        (overlap.get(p) ?? []).filter((n) => ws.members.includes(n)).length
+    const clean =
+        ws &&
+        (await api.diffNames(root, ws.base, ws.name)).filter(
+            (p) => !dirtyPaths.has(p) && built(p)
+        )
+    // a file several members build first: one owner proves nothing about a join
+    const file = clean && (clean.find((p) => built(p) > 1) ?? clean[0])
+    if (!file)
+        console.log("ok: hunk owners — skipped, no clean file in a multi-branch stack")
+    else {
+        const claims = await api.hunkOwners(root, stack.branches, file)
+        const { own } = await api.paneRanges(root, ws, file)
+        const uncovered = own.filter(
+            (r) => !claims.some((c) => c.range.intersection(r))
+        )
+        const cases = [
+            [claims.length > 0, true, "the hunks are claimed at all"],
+            [
+                claims.every((c) => ws.members.includes(c.name)),
+                true,
+                "every claim names a member of the stack",
+            ],
+            [uncovered.length, 0, "no hunk of the lens is left unnamed"],
+        ].filter(([got, want]) => got !== want)
+        for (const [got, want, what] of cases)
+            console.log(`PROBLEM  hunk owners: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+        if (cases.length) process.exitCode = 1
+        console.log(
+            `ok: hunk owners — ${claims.length} claims by ${new Set(claims.map((c) => c.name)).size} of ${built(file)} branches over ${own.length} hunks of ${file}, ${3 - cases.length}/3 cases`
         )
     }
 }
