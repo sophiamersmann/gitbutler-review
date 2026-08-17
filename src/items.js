@@ -271,16 +271,12 @@ function branchItem(branch, overrides) {
         branch.name,
         vscode.TreeItemCollapsibleState.Collapsed
     )
-    const ci = ciState(branch)
-    item.description = [
-        // green is the norm; saying so for ten branches is noise
-        ci.state !== "passing" && ci.label,
-        // a docs branch is always freshly touched and never the thing you act
-        // on, so its age is noise
-        !isDemoted(branch.name) && branch.latest && ago(branch.latest),
-    ]
-        .filter(Boolean)
-        .join(" · ")
+    // no CI on this row or in its tooltip: a check's state belongs to the PR, and
+    // the Pull Requests view already rolls it into that row's circle
+    // a docs branch is always freshly touched and never the thing you act on, so
+    // its age is noise
+    item.description =
+        (!isDemoted(branch.name) && branch.latest && ago(branch.latest)) || ""
     item.iconPath = new vscode.ThemeIcon(
         "git-branch",
         new vscode.ThemeColor("butReview.branchIcon")
@@ -292,8 +288,6 @@ function branchItem(branch, overrides) {
                 ? ""
                 : `${branch.fileCount} file${branch.fileCount === 1 ? "" : "s"} changed`,
             `Compared against \`${branch.base}\``,
-            ci.label ?? "",
-            ...ci.failing.map((c) => `- ✗ ${c}`),
             "",
             ...branch.subjects.map((s) => `- ${s}`),
         ]
