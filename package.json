@@ -77,12 +77,6 @@
         "views": {
             "butReview": [
                 {
-                    "id": "butReview.uncommitted",
-                    "name": "Changes",
-                    "when": "butReview.hasUncommitted",
-                    "icon": "icon-stack3.svg"
-                },
-                {
                     "id": "butReview.branches",
                     "name": "Branches",
                     "icon": "icon-stack3.svg"
@@ -90,7 +84,12 @@
                 {
                     "id": "butReview.prs",
                     "name": "Pull Requests",
-                    "visibility": "collapsed",
+                    "icon": "icon-stack3.svg"
+                },
+                {
+                    "id": "butReview.uncommitted",
+                    "name": "Changes",
+                    "when": "butReview.hasUncommitted",
                     "icon": "icon-stack3.svg"
                 }
             ]
