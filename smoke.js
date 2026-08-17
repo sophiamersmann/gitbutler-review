@@ -518,13 +518,18 @@ console.log(
     const top = await dirty.getChildren()
     const branches = top.filter((n) => n.contextValue === "branchGroup")
     const strayGroup = top.filter((n) => n.contextValue === "unanchoredGroup")
-    const groups = await kids(branches)
+    // a branch holds its commits and, unless it has only one, a summary row
+    // listing everything the branch absorbs
+    const under = await kids(branches)
+    const groups = under.filter((n) => n.contextValue === "commitGroup")
+    const summaries = under.filter((n) => n.contextValue === "branchFiles")
     // every file row, not just the expandable ones — a single-hunk file still
     // has to resolve its ID, and this is the only place that proves it
     const anchored = await kids(groups)
-    const files = [...anchored, ...(await kids(strayGroup))]
+    const summarised = await kids(summaries)
+    const files = [...anchored, ...summarised, ...(await kids(strayGroup))]
     const hunks = await kids(files)
-    const rows = [...top, ...groups, ...files, ...hunks]
+    const rows = [...top, ...under, ...files, ...hunks]
     const strays = top.findIndex((n) => n.contextValue === "unanchoredGroup")
     const fmt = (r) => (r ? api.lineRange(r.from, r.to) : undefined)
     const cases = [
@@ -542,6 +547,10 @@ console.log(
         // change lands, which is the one thing this view exists to say
         [branches.every((b) => b.commits.every((g) => (g.meta.branch ?? "no branch") === b.label)), true, "every commit sits under its own branch"],
         [branches.reduce((n, b) => n + b.commits.reduce((m, g) => m + g.files.length, 0), 0), anchored.length, "the branch rows hold every anchored file"],
+        // the summary row is the branch's files and nothing else: short, and it
+        // would be a lie the moment a commit's files stopped reaching it
+        [branches.filter((b) => b.commits.length > 1).reduce((n, b) => n + b.commits.reduce((m, g) => m + g.files.length, 0), 0), summarised.length, "and a summary row holds its branch's again"],
+        [summaries.length, branches.filter((b) => b.commits.length > 1).length, "one summary per branch that has more than one commit"],
         [api.hunkRange("@531,6 +531,8"), "L531–538", "a bodyless hunk falls back to its span"],
         [api.hunkRange("@1,3 +7"), "L7", "a one-line hunk names one line"],
         // the span is not the edit: git pads a hunk with three lines of context
@@ -567,7 +576,7 @@ console.log(
         console.log(`PROBLEM  changes: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
     if (cases.length) process.exitCode = 1
     console.log(
-        `ok: changes — ${branches.length} branches, ${groups.length} commits, ${files.length} file rows, ${hunks.length} hunk rows, all addressable`
+        `ok: changes — ${branches.length} branches, ${groups.length} commits, ${summaries.length} summary rows, ${files.length} file rows, ${hunks.length} hunk rows, all addressable`
     )
 }
 

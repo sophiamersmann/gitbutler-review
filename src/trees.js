@@ -4,7 +4,7 @@ const vscode = require("vscode")
 const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
-const { branchGroupItem, branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, hunkItem, prItem, prStackItem, stackItem, unanchoredGroupItem, wholeStackItem } = require("./items")
+const { branchFilesItem, branchGroupItem, branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, hunkItem, prItem, prStackItem, stackItem, unanchoredGroupItem, wholeStackItem } = require("./items")
 const { byBranch, groupsOf, layoutFor, positions, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
@@ -133,8 +133,17 @@ class UncommittedTree extends Tree {
         if (!root) return []
         try {
             // `commits`, not `branch`: BranchTree means something else by that
-            if (node?.commits) return node.commits.map(commitGroupItem)
-            if (node?.rows) return node.rows.map((r) => dirtyFileItem(r, true))
+            if (node?.commits) {
+                // one commit needs no summary above it saying the same thing,
+                // and with the summary gone it is the list, so it stays open
+                const only = node.commits.length === 1
+                return [
+                    ...(only ? [] : [branchFilesItem(node.branch)]),
+                    ...node.commits.map((g) => commitGroupItem(g, only)),
+                ]
+            }
+            if (node?.rows)
+                return node.rows.map((r) => dirtyFileItem(r, node.unanchored))
             if (node?.group)
                 return node.group.files.map((r) => dirtyFileItem(r, false))
             if (node?.row)

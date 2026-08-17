@@ -40,6 +40,30 @@ function unanchoredGroupItem(rows) {
     item.contextValue = "unanchoredGroup"
     item.id = "unanchored"
     item.rows = rows
+    item.unanchored = true
+    return item
+}
+
+/** Everything the branch would absorb, in one list — the commit rows below say
+ *  which commit each file lands in, and this says what the branch gets. A file
+ *  whose hunks split across two commits sits here twice, once per commit, since
+ *  a merged row could no longer name what it absorbs into. */
+function branchFilesItem(branch) {
+    const item = new vscode.TreeItem(
+        "All changes",
+        vscode.TreeItemCollapsibleState.Expanded
+    )
+    item.description = `${branch.files} file${branch.files === 1 ? "" : "s"}`
+    item.iconPath = new vscode.ThemeIcon("files")
+    item.contextValue = "branchFiles"
+    item.id = `branch-files:${branch.name}`
+    // copies, so `scope` can keep these rows' ids apart from the same rows under
+    // their commit — one id twice in a tree is a row VSCode drops
+    item.rows = branch.groups
+        .flatMap((g) => g.files)
+        .map((r) => ({ ...r, scope: "b" }))
+        .sort((a, b) => a.path.localeCompare(b.path))
+    item.unanchored = false
     return item
 }
 
@@ -66,13 +90,18 @@ function branchGroupItem(branch) {
     item.contextValue = "branchGroup"
     item.id = `branch:${branch.name}`
     item.commits = branch.groups
+    item.branch = branch
     return item
 }
 
-function commitGroupItem(group) {
+/** Collapsed unless it is the branch's only commit, in which case the summary
+ *  row above is skipped and this is the whole list. */
+function commitGroupItem(group, expanded) {
     const item = new vscode.TreeItem(
         group.commit.commit_summary,
-        vscode.TreeItemCollapsibleState.Expanded
+        expanded
+            ? vscode.TreeItemCollapsibleState.Expanded
+            : vscode.TreeItemCollapsibleState.Collapsed
     )
     const n = group.files.length
     item.description = `${n} file${n === 1 ? "" : "s"}`
@@ -446,9 +475,10 @@ function prItem(row) {
 }
 
 /** Unique per row in the tree: the same path can sit under a commit group and
- *  under Unanchored at once, and under two commit groups at once. */
+ *  under Unanchored at once, under two commit groups at once, and under the
+ *  branch's own summary row as well — which is what `scope` keeps apart. */
 const rowId = (row, unanchored) =>
-    `${unanchored ? "u" : "a"}:${row.commit.commit_id}:${row.path}`
+    `${row.scope ?? (unanchored ? "u" : "a")}:${row.commit.commit_id}:${row.path}`
 
 /** Pure new code, pure removal, or a rewrite — the distinction the file's own
  *  A/M/D status can't make, since every one of these lives in a modified file. */
@@ -476,4 +506,4 @@ function churn(hunks) {
     return `+${adds} −${dels}`
 }
 
-module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unanchoredGroupItem, branchGroupItem, commitGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, groupItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unanchoredGroupItem, branchFilesItem, branchGroupItem, commitGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, groupItem, fileItem, prStackItem, prItem }
