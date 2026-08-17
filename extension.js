@@ -221,8 +221,12 @@ function activate(context) {
         vscode.window.registerTreeDataProvider("butReview.prs", prs),
         dirtyView,
 
-        vscode.commands.registerCommand("butReview.openUrl", (url) =>
-            vscode.env.openExternal(vscode.Uri.parse(url))
+        vscode.commands.registerCommand("butReview.openUrl", (node) =>
+            vscode.env.openExternal(vscode.Uri.parse(node.url))
+        ),
+
+        vscode.commands.registerCommand("butReview.copyUrl", (node) =>
+            vscode.env.clipboard.writeText(node.url)
         ),
 
         // local state and GitHub refresh separately: one is a handful of git

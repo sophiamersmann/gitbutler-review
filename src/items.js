@@ -438,11 +438,9 @@ function prItem(row) {
             ...ci.failing.map((c) => `- ✗ ${c}`),
         ].join("  \n")
     )
-    item.command = {
-        command: "butReview.openUrl",
-        title: "Open Pull Request",
-        arguments: [pr.url],
-    }
+    // no item.command: the row's two actions are the inline buttons, which read
+    // this off the node
+    item.url = pr.url
     item.contextValue = "pr"
     return item
 }
