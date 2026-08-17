@@ -81,6 +81,8 @@ function activate(context) {
      *  dimming, and so F7 has the branch's own hunks to walk */
     const marked = new Map()
 
+    const lensChanged = new vscode.EventEmitter()
+
     /** Everything the pane's marks are drawn from, in one call: the two hunk
      *  sets, and who put each of them there. */
     const paneState = async (root, branch, candidates, file) => {
@@ -136,6 +138,27 @@ function activate(context) {
             // so an unpainted ruler is itself the answer: nobody else is in here
             editor.setDecorations(mine, m?.ranges.length ? m.own : [])
         }
+        // the names come from the same `marked` entries the decorations do, so
+        // whatever repainted them has just changed the lenses too
+        lensChanged.fire()
+    }
+
+    // A lens is invisible in a diff until `diffEditor.codeLens` is on, and it is
+    // off by default — so without this the names would simply never appear, and
+    // read as a feature that doesn't work. Asked once per machine, and only over
+    // a file that actually has names to show.
+    const askForLenses = async () => {
+        const diffs = vscode.workspace.getConfiguration("diffEditor")
+        if (diffs.get("codeLens") || context.globalState.get("askedCodeLens"))
+            return
+        context.globalState.update("askedCodeLens", true)
+        const yes = "Turn it on"
+        const pick = await vscode.window.showInformationMessage(
+            "Hunks another branch put in this pane can be named by that branch, which VSCode shows in a diff only once `diffEditor.codeLens` is on.",
+            yes
+        )
+        if (pick === yes)
+            diffs.update("codeLens", true, vscode.ConfigurationTarget.Global)
     }
 
     syncVisibility()
@@ -188,6 +211,51 @@ function activate(context) {
                     // a file that doesn't exist at that ref reads as empty
                     .catch(() => ""),
         }),
+
+        // Whose hunk this is, in words, at the head of it — the one annotation
+        // that gets a line of its own, since a decoration is drawn inside a line
+        // box of fixed height and would overlap the code above. Served straight
+        // from `marked`, so a file nobody is reviewing costs a map lookup and no
+        // pane ever waits on git. A lens belongs to the document rather than the
+        // editor, which no API can narrow: the names show in a plain editor of
+        // the same file too, for as long as its review is open.
+        vscode.languages.registerCodeLensProvider(
+            { scheme: "file" },
+            {
+                onDidChangeCodeLenses: lensChanged.event,
+                // A label, not a button: the empty command is what makes VSCode
+                // draw it as text rather than a link. There is nothing a click
+                // could do that reading the name doesn't already do — and the
+                // obvious candidate, opening that branch's own review, changes
+                // the title of a pane showing the same worktree file and little
+                // else the eye can catch.
+                provideCodeLenses: (doc) =>
+                    (marked.get(doc.uri.toString())?.notes ?? []).map((n) => {
+                        // An empty range is a deletion, which has no line of its
+                        // own to sit on: the pane draws the lines that went as
+                        // filler above the line that follows them, and a lens
+                        // can only attach to real ones. So it goes on the line
+                        // after the gap — directly under the block, rather than
+                        // a line above it — and says which way it points, since
+                        // that puts it on top of code it does not describe.
+                        const gone = n.range.isEmpty
+                        const line = Math.min(
+                            gone ? n.range.start.line + 1 : n.range.start.line,
+                            doc.lineCount - 1
+                        )
+                        const label = [n.name, n.commit]
+                            .filter(Boolean)
+                            .join(" · ")
+                        return new vscode.CodeLens(
+                            new vscode.Range(line, 0, line, 0),
+                            {
+                                title: gone ? `↑ deleted by ${label}` : label,
+                                command: "",
+                            }
+                        )
+                    }),
+            }
+        ),
 
         // Scoped to our own scheme, so the Explorer's decorations are untouched.
         vscode.window.registerFileDecorationProvider({
@@ -338,11 +406,18 @@ function activate(context) {
                     const candidates = stacksOf(await status(root))
                         .flatMap((s) => s.branches)
                         .filter((b) => named.has(b.name))
+                    const state = await paneState(
+                        root,
+                        branch,
+                        candidates,
+                        f.file
+                    )
+                    if (state.notes.length) askForLenses()
                     marked.set(right.toString(), {
                         branch,
                         candidates,
                         file: f.file,
-                        ...(await paneState(root, branch, candidates, f.file)),
+                        ...state,
                         // named the way the tree names them, so a grey line and
                         // its row agree on whose work it is
                         hover: new vscode.MarkdownString(

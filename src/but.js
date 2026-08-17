@@ -48,6 +48,9 @@ function stacksOf(st) {
                 pending: b.ci?.pendingCheckTitles ?? [],
                 failing: b.ci?.failingCheckTitles ?? [],
                 subjects: b.commits.map((c) => c.message.split("\n")[0]),
+                // positional with `subjects`, and what blame has to match to
+                // name the commit behind a hunk
+                commits: b.commits.map((c) => c.commitId),
                 latest: b.commits[0]?.createdAt,
             })),
         }))

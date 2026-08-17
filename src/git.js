@@ -140,9 +140,35 @@ async function paneRanges(root, branch, file) {
     }
 }
 
-/** Which branch put each hunk of the pane there, as `{range, name}` in the
- *  pane's line numbers. The same two diffs `paneRanges` runs, per candidate: a
- *  branch owns what its base doesn't have and the worktree still does.
+/** Every line's commit, from one blame of the worktree file, each with its
+ *  subject: porcelain names a commit the first time it appears, so a SHA never
+ *  has to be looked up again. The header lines are the only ones that can start
+ *  with a SHA — the file's own content follows them tab-prefixed. */
+async function blameLines(root, file) {
+    const out = await git(root, ["blame", "--porcelain", "--", file])
+    const byLine = new Map()
+    const subject = new Map()
+    let sha
+    for (const l of out.split("\n")) {
+        const head = /^([0-9a-f]{40}) \d+ (\d+)/.exec(l)
+        if (head) {
+            sha = head[1]
+            byLine.set(Number(head[2]) - 1, sha)
+        } else if (l.startsWith("summary ")) subject.set(sha, l.slice(8))
+    }
+    return { byLine, subject }
+}
+
+/** Which branch put each hunk of the pane there, and which of its commits, as
+ *  `{range, name, commit}` in the pane's line numbers. The same two diffs
+ *  `paneRanges` runs, per candidate: a branch owns what its base doesn't have
+ *  and the worktree still does.
+ *
+ *  The commit comes from blame, which can only answer where the lines are still
+ *  there to blame: over a deletion it names whoever wrote the line the seam
+ *  landed on, who is somebody else entirely. So a claim takes only the commits
+ *  blame attributes to the claiming branch itself, and falls back to the
+ *  branch's own commit when there is just one it could be.
  *
  *  Subtracts the deletion seams too, which is the one place this parts company
  *  with `paneRanges`. There an empty range is kept, so a hunk that merely sits
@@ -175,12 +201,37 @@ async function hunkOwners(root, branches, file) {
     ).flat()
     // two branches claiming the same lines made the same edit; the pane holds
     // one version of it, so a name would be a guess
-    return claims.filter(
+    const kept = claims.filter(
         (c) =>
             !claims.some(
                 (o) => o.name !== c.name && o.range.intersection(c.range)
             )
     )
+    if (!kept.length) return kept
+
+    const { byLine, subject } = await blameLines(root, file).catch(() => ({
+        byLine: new Map(),
+        subject: new Map(),
+    }))
+    return kept.map((c) => {
+        const owner = branches.find((b) => b.name === c.name)
+        const own = new Set(owner?.commits ?? [])
+        const shas = new Set()
+        for (let l = c.range.start.line; l <= c.range.end.line; l++)
+            if (own.has(byLine.get(l))) shas.add(byLine.get(l))
+        const subjects = [...shas].map((s) => subject.get(s)).filter(Boolean)
+        // a branch holding one commit needs no blame to be sure which it was,
+        // which is the case blame cannot answer anyway: a hunk that is only a
+        // deletion
+        const only = owner?.subjects?.length === 1 ? owner.subjects[0] : undefined
+        return {
+            ...c,
+            commit:
+                subjects.length > 1
+                    ? `${subjects.length} commits`
+                    : (subjects[0] ?? only),
+        }
+    })
 }
 
 /** Files whose workspace copy differs from this branch's tip — precisely what
@@ -211,4 +262,4 @@ function overlapMap(files) {
     return map
 }
 
-module.exports = { EMPTY_TREE, diffNames, changedFiles, paneRanges, hunkOwners, contaminated, branchFiles, overlapMap }
+module.exports = { EMPTY_TREE, diffNames, changedFiles, paneRanges, blameLines, hunkOwners, contaminated, branchFiles, overlapMap }

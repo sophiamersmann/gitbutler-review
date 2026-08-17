@@ -487,8 +487,19 @@ console.log(
         const uncovered = own.filter(
             (r) => !claims.some((c) => c.range.intersection(r))
         )
+        // the commit behind a hunk is parsed out of blame's porcelain, which is
+        // the same kind of seam `diff.external` once broke: one header per line,
+        // so a miss here is silent and the names simply stop appearing
+        const { byLine } = await api.blameLines(root, file)
+        const lines = fs.readFileSync(path.join(root, file), "utf8").split("\n")
         const cases = [
             [claims.length > 0, true, "the hunks are claimed at all"],
+            [
+                byLine.size,
+                // a trailing newline leaves a last element that is not a line
+                lines.at(-1) === "" ? lines.length - 1 : lines.length,
+                "blame accounts for every line of the file",
+            ],
             [
                 claims.every((c) => ws.members.includes(c.name)),
                 true,
@@ -500,7 +511,7 @@ console.log(
             console.log(`PROBLEM  hunk owners: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
         if (cases.length) process.exitCode = 1
         console.log(
-            `ok: hunk owners — ${claims.length} claims by ${new Set(claims.map((c) => c.name)).size} of ${built(file)} branches over ${own.length} hunks of ${file}, ${3 - cases.length}/3 cases`
+            `ok: hunk owners — ${claims.length} claims by ${new Set(claims.map((c) => c.name)).size} of ${built(file)} branches over ${own.length} hunks of ${file}, ${claims.filter((c) => c.commit).length} naming a commit, ${4 - cases.length}/4 cases`
         )
     }
 }
