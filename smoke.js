@@ -289,8 +289,24 @@ for (const r of rows) for (const x of r.review) store.set(x.key, x.blob)
 rows = entries.map((e) => api.fileItem(e, store, true))
 const checked = rows.filter((r) => r.checkboxState === 1).length
 const stale = api.fileItem({ ...entries[0], blob: "0000" }, store, true)
+// and the blob it keys on is the worktree's, not the branch tip's — otherwise
+// editing a ticked file leaves the tick standing
+const hash = (...a) => {
+    try {
+        return execFileSync("git", a, { cwd: root, stdio: ["ignore", "pipe", "ignore"] }).toString().trim()
+    } catch {
+        return "0".repeat(40) // gone at that end
+    }
+}
+const edited = entries.filter(
+    ({ f }) => hash("rev-parse", `${branch.name}:${f.file}`) !== hash("hash-object", "--", f.file)
+)
+const wrong = edited.filter(({ f }) => f.blob !== hash("hash-object", "--", f.file))
+for (const { f } of wrong)
+    console.log(`PROBLEM  tick: ${f.file} keys on the branch tip, so an edit leaves it ticked`)
+if (wrong.length) process.exitCode = 1
 console.log(
-    `ok: ${rows.length} file rows — ${unchecked} unchecked, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}`
+    `ok: ${rows.length} file rows — ${unchecked} unchecked, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}, ${edited.length} edited in the worktree all keyed on it`
 )
 
 // who else changes a file, and which of them is worth a warning. A branch below

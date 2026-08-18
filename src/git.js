@@ -28,12 +28,12 @@ const diffNames = async (root, a, b) =>
         .split("\n")
         .filter(Boolean)
 
-/** Changed files with their status letter, churn, and blob SHA at the branch
- *  tip. One call: --raw carries the status and the blob, --numstat the churn,
- *  and git prints the two sections one after the other. --no-renames keeps the
- *  paths plain, so they zip. Keying "reviewed" on the blob means a tick
- *  survives a reload but clears itself the moment the branch's version of that
- *  file changes — which is exactly what absorbing an edit does. */
+/** Changed files with their status letter, churn, and the blob the right-hand
+ *  pane will show. One call: --raw carries the status and the blob, --numstat
+ *  the churn, and git prints the two sections one after the other. --no-renames
+ *  keeps the paths plain, so they zip. Keying "reviewed" on that blob means a
+ *  tick survives a reload but clears itself the moment what the pane shows
+ *  changes — an absorb, or simply editing the file. */
 async function changedFiles(root, branch) {
     const out = await git(root, [
         "diff",
@@ -54,15 +54,54 @@ async function changedFiles(root, branch) {
             // :<srcmode> <dstmode> <srcsha> <dstsha> <status>\t<path>
             const [meta, file] = line.split("\t")
             const [, , , blob, status] = meta.split(" ")
-            // a deleted file's dst sha is all zeros — a stable sentinel, and
-            // the tick only ever compares blobs for equality
             files.push({ file, status: status[0], blob })
         } else {
             const [adds, dels, file] = line.split("\t")
             churn.set(file, { adds, dels })
         }
     }
-    return files.map((f) => ({ ...f, ...churn.get(f.file) }))
+    const live = await worktreeBlobs(root, branch)
+    return files.map((f) => ({
+        ...f,
+        ...churn.get(f.file),
+        blob: live.get(f.file) ?? f.blob,
+    }))
+}
+
+// a deleted file's dst sha in --raw: all zeros, and the tick only ever compares
+// blobs for equality
+const GONE = "0".repeat(40)
+
+/** The worktree's blob for every file whose workspace copy differs from the
+ *  branch tip. The pane diffs against the worktree, so that — not the committed
+ *  blob — is what the reader actually reviewed: without it, editing a ticked
+ *  file leaves the tick standing over content nobody has read. */
+async function worktreeBlobs(root, branch) {
+    const out = await git(root, [
+        "diff",
+        "--no-ext-diff",
+        "--no-renames",
+        "--name-status",
+        branch.name,
+        "--",
+    ])
+    const blobs = new Map()
+    const present = []
+    for (const line of out.split("\n")) {
+        if (!line) continue
+        const [status, file] = line.split("\t")
+        if (status[0] === "D") blobs.set(file, GONE)
+        else present.push(file)
+    }
+    // ponytail: one argv, so a branch with thousands of dirty files would blow
+    // the limit — chunk it if that ever happens
+    if (present.length) {
+        const hashes = (
+            await git(root, ["hash-object", "--", ...present])
+        ).split("\n")
+        present.forEach((f, i) => blobs.set(f, hashes[i]))
+    }
+    return blobs
 }
 
 /** The hunks of `git diff a b -- file`, as ranges in b's line numbers, or in the
