@@ -87,21 +87,21 @@ function branchGroupItem(branch) {
             ...branch.groups.map((g) => `- ${g.commit.commit_summary}`),
         ].join("\n")
     )
-    item.contextValue = "branchGroup"
+    // "no branch" is the bucket for a commit `but status` filed under none, and
+    // absorb has no branch to be handed — so that row gets no button
+    if (branch.groups[0]?.meta.branch) item.contextValue = "branchGroup"
     item.id = `branch:${branch.name}`
     item.commits = branch.groups
     item.branch = branch
     return item
 }
 
-/** Collapsed unless it is the branch's only commit, in which case the summary
- *  row above is skipped and this is the whole list. */
-function commitGroupItem(group, expanded) {
+/** Always collapsed: "All changes" above it is the list you skim, and this is
+ *  the same files again, split by where each one lands. */
+function commitGroupItem(group) {
     const item = new vscode.TreeItem(
         group.commit.commit_summary,
-        expanded
-            ? vscode.TreeItemCollapsibleState.Expanded
-            : vscode.TreeItemCollapsibleState.Collapsed
+        vscode.TreeItemCollapsibleState.Collapsed
     )
     const n = group.files.length
     item.description = `${n} file${n === 1 ? "" : "s"}`

@@ -545,8 +545,7 @@ console.log(
     const top = await dirty.getChildren()
     const branches = top.filter((n) => n.contextValue === "branchGroup")
     const strayGroup = top.filter((n) => n.contextValue === "unanchoredGroup")
-    // a branch holds its commits and, unless it has only one, a summary row
-    // listing everything the branch absorbs
+    // a branch holds its commits and a summary row listing everything it absorbs
     const under = await kids(branches)
     const groups = under.filter((n) => n.contextValue === "commitGroup")
     const summaries = under.filter((n) => n.contextValue === "branchFiles")
@@ -559,6 +558,11 @@ console.log(
     const rows = [...top, ...under, ...files, ...hunks]
     const strays = top.findIndex((n) => n.contextValue === "unanchoredGroup")
     const fmt = (r) => (r ? api.lineRange(r.from, r.to) : undefined)
+    const SOLE = {
+        commit: { commit_summary: "one commit", commit_id: "c1" },
+        meta: { branch: "b" },
+        files: [],
+    }
     const cases = [
         [hunks.filter((h) => !h.contextValue).length, 0, "every hunk row resolved a CLI ID"],
         // one id twice in a tree is VSCode's problem, not ours to discover later
@@ -576,8 +580,12 @@ console.log(
         [branches.reduce((n, b) => n + b.commits.reduce((m, g) => m + g.files.length, 0), 0), anchored.length, "the branch rows hold every anchored file"],
         // the summary row is the branch's files and nothing else: short, and it
         // would be a lie the moment a commit's files stopped reaching it
-        [branches.filter((b) => b.commits.length > 1).reduce((n, b) => n + b.commits.reduce((m, g) => m + g.files.length, 0), 0), summarised.length, "and a summary row holds its branch's again"],
-        [summaries.length, branches.filter((b) => b.commits.length > 1).length, "one summary per branch that has more than one commit"],
+        [branches.reduce((n, b) => n + b.commits.reduce((m, g) => m + g.files.length, 0), 0), summarised.length, "and a summary row holds its branch's again"],
+        [summaries.length, branches.length, "every branch has one, whatever its commit count"],
+        [groups.every((g) => g.collapsibleState === 1), true, "and every commit row is collapsed under it"],
+        // a clean tree leaves every case above vacuous, and this is the one
+        // that changes shape with the commit count
+        [(await dirty.getChildren({ commits: [SOLE], branch: { name: "b", files: 1, groups: [SOLE] } })).map((r) => `${r.contextValue}/${r.collapsibleState}`).join(" "), "branchFiles/2 commitGroup/1", "a branch with one commit still gets a summary row"],
         [api.hunkRange("@531,6 +531,8"), "L531–538", "a bodyless hunk falls back to its span"],
         [api.hunkRange("@1,3 +7"), "L7", "a one-line hunk names one line"],
         // the span is not the edit: git pads a hunk with three lines of context

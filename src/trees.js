@@ -134,12 +134,12 @@ class UncommittedTree extends Tree {
         try {
             // `commits`, not `branch`: BranchTree means something else by that
             if (node?.commits) {
-                // one commit needs no summary above it saying the same thing,
-                // and with the summary gone it is the list, so it stays open
-                const only = node.commits.length === 1
+                // always, even for a single commit: this row is what the
+                // branch's absorb acts on, and a tree that changes shape with
+                // the commit count is one you have to read twice
                 return [
-                    ...(only ? [] : [branchFilesItem(node.branch)]),
-                    ...node.commits.map((g) => commitGroupItem(g, only)),
+                    branchFilesItem(node.branch),
+                    ...node.commits.map((g) => commitGroupItem(g)),
                 ]
             }
             if (node?.rows)
