@@ -81,6 +81,36 @@ function activate(context) {
      *  dimming, and so F7 has the branch's own hunks to walk */
     const marked = new Map()
 
+    /** The right-hand sides of the review diffs on screen right now. A mark
+     *  belongs to that pane, not to the file: keyed by uri alone it lands in a
+     *  plain editor of the same file too, opened hours later for something else
+     *  entirely — dimmed lines and a hijacked F7 in a file nobody is reviewing.
+     *  Active tabs only, since a backgrounded diff paints nothing. */
+    const reviewPanes = () =>
+        new Set(
+            vscode.window.tabGroups.all
+                .map((g) => g.activeTab?.input)
+                .filter(
+                    (i) =>
+                        i instanceof vscode.TabInputTextDiff &&
+                        i.original.scheme === BASE
+                )
+                .map((i) => i.modified.toString())
+        )
+
+    /** The review an editor is showing, if it is showing one at all. */
+    const reviewFor = (editor) =>
+        editor && reviewPanes().has(editor.document.uri.toString())
+            ? marked.get(editor.document.uri.toString())
+            : undefined
+
+    const syncReviewing = () =>
+        vscode.commands.executeCommand(
+            "setContext",
+            "butReview.reviewing",
+            !!reviewFor(vscode.window.activeTextEditor)
+        )
+
     const lensChanged = new vscode.EventEmitter()
 
     /** Everything the pane's marks are drawn from, in one call: the two hunk
@@ -124,7 +154,7 @@ function activate(context) {
 
     const paint = () => {
         for (const editor of vscode.window.visibleTextEditors) {
-            const m = marked.get(editor.document.uri.toString())
+            const m = reviewFor(editor)
             // unconditional: an editor that lost its entry has to be cleared
             editor.setDecorations(
                 foreign,
@@ -217,8 +247,9 @@ function activate(context) {
         // box of fixed height and would overlap the code above. Served straight
         // from `marked`, so a file nobody is reviewing costs a map lookup and no
         // pane ever waits on git. A lens belongs to the document rather than the
-        // editor, which no API can narrow: the names show in a plain editor of
-        // the same file too, for as long as its review is open.
+        // editor, so the tabs are what says whether this file is being reviewed
+        // at all — without that the names show in a plain editor of the same
+        // file too, for as long as its review is open.
         vscode.languages.registerCodeLensProvider(
             { scheme: "file" },
             {
@@ -230,7 +261,10 @@ function activate(context) {
                 // the title of a pane showing the same worktree file and little
                 // else the eye can catch.
                 provideCodeLenses: (doc) =>
-                    (marked.get(doc.uri.toString())?.notes ?? []).map((n) => {
+                    (reviewPanes().has(doc.uri.toString())
+                        ? (marked.get(doc.uri.toString())?.notes ?? [])
+                        : []
+                    ).map((n) => {
                         // An empty range is a deletion, which has no line of its
                         // own to sit on: the pane draws the lines that went as
                         // filler above the line that follows them, and a lens
@@ -326,16 +360,18 @@ function activate(context) {
 
         vscode.window.onDidChangeVisibleTextEditors(paint),
 
+        // Closing a review diff leaves the plain editor of the same file behind,
+        // and it is the same editor: no visible-editor event, so without this
+        // its marks would stay until something else repainted.
+        vscode.window.tabGroups.onDidChangeTabs(() => {
+            paint()
+            syncReviewing()
+        }),
+
         // F7 only means "next hunk of this branch" in a pane we know about;
         // everywhere else — including the read-only left pane — it keeps its
         // built-in meaning of "next difference, whoever made it".
-        vscode.window.onDidChangeActiveTextEditor((editor) =>
-            vscode.commands.executeCommand(
-                "setContext",
-                "butReview.reviewing",
-                !!editor && marked.has(editor.document.uri.toString())
-            )
-        ),
+        vscode.window.onDidChangeActiveTextEditor(syncReviewing),
 
         // The minimap can't be dimmed — extensions have no say over what it
         // paints — so the way past a foreign hunk is to jump over it.
@@ -346,7 +382,7 @@ function activate(context) {
         ].map(([name, step]) =>
             vscode.commands.registerCommand(`butReview.${name}Change`, () => {
                 const editor = vscode.window.activeTextEditor
-                const m = editor && marked.get(editor.document.uri.toString())
+                const m = reviewFor(editor)
                 if (!m) return
                 // a branch at the bottom of a busy stack can have every line it
                 // touched rewritten above it — say so rather than sit there
