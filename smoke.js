@@ -309,6 +309,25 @@ console.log(
     `ok: ${rows.length} file rows — ${unchecked} unchecked, ${checked} checked after ticking, stale blob reads ${stale.checkboxState === 0 ? "unchecked" : "CHECKED (bug)"}, ${edited.length} edited in the worktree all keyed on it`
 )
 
+// The committed lens: the pane is the branch's own tip, so a tick keys on the
+// tip's blob — an edit you cannot see there must not clear it — and on a key of
+// its own, or ticking in one mode would overwrite the other's.
+const onCommit = await api.changedFiles(root, branch, true)
+const drifted = onCommit.filter(
+    ({ file, blob }) => blob !== hash("rev-parse", `${branch.name}:${file}`)
+)
+for (const { file } of drifted)
+    console.log(`PROBLEM  committed lens: ${file} keys on something other than the tip`)
+const keys = [false, true].map((c) => api.reviewKey(branch, "a.ts", c))
+if (keys[0] === keys[1])
+    console.log("PROBLEM  committed lens: both modes tick under the same key")
+if (drifted.length || keys[0] === keys[1]) process.exitCode = 1
+// on a clean tree the two modes key on the same blobs, so say when the first
+// half of this proved nothing
+console.log(
+    `ok: committed lens — ${onCommit.length} rows keyed on the tip${edited.length ? "" : " (indistinguishable from the workspace's, tree is clean)"}, ticks namespaced apart from the workspace's`
+)
+
 // who else changes a file, and which of them is worth a warning. A branch below
 // is in this one's base already, so its hunks cancel out of the diff — naming it
 // would send you looking for lines that are not in the pane.
@@ -570,7 +589,9 @@ console.log(
         [rows.filter((r) => !r.id).length, 0, "and every row has one"],
         // the label and the cursor come from one number, so a row that says L814
         // and opens on 811 is the bug this catches
-        [hunks.every((h) => h.command.arguments[1] === Number(/\d+/.exec(h.label)[0])), true, "a hunk row opens on the line it names"],
+        // "whole file" is a hunk that deletes the file: it names no line, so
+        // there is nothing here to check against
+        [hunks.filter((h) => /\d/.test(h.label)).every((h) => h.command.arguments[1] === Number(/\d+/.exec(h.label)[0])), true, "a hunk row opens on the line it names"],
         [files.filter((f) => f.row.hunkMeta[0]?.from).every((f) => f.command.arguments[1] === f.row.hunkMeta[0].from), true, "a file row opens on its first changed line"],
         [files.filter((f) => !f.target.args.length).length, 0, "so did every file row"],
         [strays === -1 || strays === top.length - 1, true, "unanchored sits last"],

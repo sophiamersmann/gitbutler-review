@@ -6,7 +6,7 @@ const { stacksOf, status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
 const { BASE, DECORATION, FILE, PR } = require("./src/items")
-const { layoutKey, nextHunk } = require("./src/model")
+const { committedMode, layoutKey, nextHunk } = require("./src/model")
 const { BranchTree, PrTree, UncommittedTree } = require("./src/trees")
 
 function activate(context) {
@@ -98,20 +98,61 @@ function activate(context) {
                 .map((i) => i.modified.toString())
         )
 
+    /** pane key -> {branch, f, alsoIn} for the committed diffs, which carry no
+     *  marks and so have no business in `marked` — this is only what "Open
+     *  Working File" needs to reopen the same file the editable way. Keyed on
+     *  both sides, since the whole-stack lens and its own tip branch put the
+     *  same ref on the right and differ only on the left. */
+    const committedPanes = new Map()
+
+    const paneKey = (left, right) => `${left}\0${right}`
+
+    /** The committed review the active tab is showing, if it is showing one.
+     *  Off the tab rather than the editor, so focusing the read-only left side
+     *  doesn't make the button vanish. */
+    const committedTab = () => {
+        const tab = vscode.window.tabGroups.activeTabGroup?.activeTab
+        return tab?.input instanceof vscode.TabInputTextDiff
+            ? committedPanes.get(
+                  paneKey(
+                      tab.input.original.toString(),
+                      tab.input.modified.toString()
+                  )
+              )
+            : undefined
+    }
+
     /** The review an editor is showing, if it is showing one at all. */
     const reviewFor = (editor) =>
         editor && reviewPanes().has(editor.document.uri.toString())
             ? marked.get(editor.document.uri.toString())
             : undefined
 
-    const syncReviewing = () =>
+    const syncReviewing = () => {
         vscode.commands.executeCommand(
             "setContext",
             "butReview.reviewing",
             !!reviewFor(vscode.window.activeTextEditor)
         )
+        vscode.commands.executeCommand(
+            "setContext",
+            "butReview.committedPane",
+            !!committedTab()
+        )
+    }
+
+    // Which side the review pane shows, as a context key so the title bar can
+    // offer the other one.
+    const syncMode = () =>
+        vscode.commands.executeCommand(
+            "setContext",
+            "butReview.committed",
+            committedMode(store)
+        )
 
     const lensChanged = new vscode.EventEmitter()
+
+    const baseChanged = new vscode.EventEmitter()
 
     /** Everything the pane's marks are drawn from, in one call: the two hunk
      *  sets, and who put each of them there. */
@@ -192,10 +233,15 @@ function activate(context) {
     }
 
     syncVisibility()
+    syncMode()
 
     function refreshAll() {
         // every trigger below can arrive right after a `but` write of our own
         status.invalidate()
+        // open documents only — each fire is a `git show`, and a document
+        // nobody is looking at gets its content read fresh when it is opened
+        for (const doc of vscode.workspace.textDocuments)
+            if (doc.uri.scheme === BASE) baseChanged.fire(doc.uri)
         tree.refresh()
         dirty.refresh()
         // A PR row's CI circle comes from `but status`, which the two views
@@ -236,6 +282,11 @@ function activate(context) {
         // Left pane of every diff: read-only by virtue of being a content
         // provider, so edits typed there can't be silently lost.
         vscode.workspace.registerTextDocumentContentProvider(BASE, {
+            // Without this VSCode reads a `butbase:` document once and keeps it
+            // forever, and every ref in one is a moving target: a branch tip
+            // that an absorb rewrote, a base that a rebase moved. The committed
+            // pane is two of them, so its diff simply never updated.
+            onDidChange: baseChanged.event,
             provideTextDocumentContent: (u) =>
                 run("git", ["show", `${u.query}:${u.path.slice(1)}`], repoRoot())
                     // a file that doesn't exist at that ref reads as empty
@@ -358,6 +409,27 @@ function activate(context) {
             )
         ),
 
+        // Two commands rather than one that flips: the title bar shows the mode
+        // you are not in, which is the only way a one-slot button can say which
+        // mode you are in.
+        // smoke:registers butReview.diffAgainstCommit butReview.diffAgainstWorkspace
+        ...["Commit", "Workspace"].map((name) =>
+            vscode.commands.registerCommand(
+                `butReview.diffAgainst${name}`,
+                () => {
+                    const mode = name.toLowerCase()
+                    // as with the layout toggle, choosing the setting's own
+                    // value clears the override rather than pinning the repo
+                    const isDefault =
+                        mode === cfg().get("diffAgainst", "workspace")
+                    store.set("diffAgainst", isDefault ? undefined : mode)
+                    syncMode()
+                    // the tick keys and the row warnings both change with it
+                    tree.refresh()
+                }
+            )
+        ),
+
         vscode.window.onDidChangeVisibleTextEditors(paint),
 
         // Closing a review diff leaves the plain editor of the same file behind,
@@ -417,16 +489,33 @@ function activate(context) {
 
         vscode.commands.registerCommand(
             "butReview.openFile",
-            async (branch, f, alsoIn = {}) => {
+            async (branch, f, alsoIn = {}, opts = {}) => {
                 const root = repoRoot()
                 const live = vscode.Uri.file(path.join(root, f.file))
+                // "Open Working File" asks for the editable pane whatever the
+                // mode says
+                const onCommit = !opts.workspace && committedMode(store)
                 // a deleted file has no workspace side; show it against nothing
                 const right =
-                    f.status === "D" ? uri(BASE, f.file, EMPTY_TREE) : live
+                    f.status === "D"
+                        ? uri(BASE, f.file, EMPTY_TREE)
+                        : onCommit
+                          ? uri(BASE, f.file, branch.name)
+                          : live
+                const left = uri(BASE, f.file, branch.base)
+
+                // Nothing to mark in a committed pane: it is this branch's diff
+                // and nobody else's, which is the point of it. With no entry the
+                // dimming, the names and F7 all stay off by themselves.
+                if (onCommit && f.status !== "D")
+                    committedPanes.set(
+                        paneKey(left.toString(), right.toString()),
+                        { branch, f, alsoIn }
+                    )
 
                 // an entry even when nothing is foreign: `ranges` empty repaints
                 // as cleared, and `own` is what F7 walks
-                if (f.status !== "D") {
+                if (f.status !== "D" && !onCommit) {
                     // who a note could name. `above` and `other` are who else is
                     // in the pane, so a branch's review names only what isn't
                     // its own; `members` is the whole-stack lens asking for its
@@ -471,13 +560,42 @@ function activate(context) {
                 }
 
                 await openDiff(
-                    uri(BASE, f.file, branch.base),
+                    left,
                     right,
-                    `${path.basename(f.file)} — ${shown(branch)}`
+                    `${path.basename(f.file)} — ${shown(branch)}${onCommit ? " (committed)" : ""}`,
+                    opts.line === undefined
+                        ? undefined
+                        : {
+                              selection: new vscode.Range(
+                                  opts.line,
+                                  0,
+                                  opts.line,
+                                  0
+                              ),
+                          }
                 )
                 paint()
             }
         ),
+
+        // The way out of a read-only pane: the same file, the editable way, at
+        // the line you were reading — best effort, since the tip's line numbers
+        // and the worktree's part company the moment the file is dirty. The
+        // committed tab stays open, as VSCode's own "Open File" leaves it.
+        vscode.commands.registerCommand("butReview.editHere", () => {
+            const m = committedTab()
+            if (!m) return
+            vscode.commands.executeCommand(
+                "butReview.openFile",
+                m.branch,
+                m.f,
+                m.alsoIn,
+                {
+                    workspace: true,
+                    line: vscode.window.activeTextEditor?.selection.active.line,
+                }
+            )
+        }),
 
         vscode.commands.registerCommand(
             "butReview.openDirty",

@@ -144,10 +144,21 @@ function wholeStack(stack) {
     }
 }
 
-// `key` is the whole-stack lens asking not to be confused with its own tip
-const reviewKey = (branch, file) => `reviewed:${branch.key ?? branch.name}:${file}`
+// `key` is the whole-stack lens asking not to be confused with its own tip; the
+// committed lens is a different pane over the same file, so its ticks are its
+// own too — otherwise ticking in one mode would overwrite the other's
+const reviewKey = (branch, file, committed) =>
+    `reviewed:${committed ? "commit:" : ""}${branch.key ?? branch.name}:${file}`
 
 const layoutKey = (branch) => `layout:${branch.key ?? branch.name}`
+
+/** Does the right-hand pane show the branch tip rather than the workspace? Per
+ *  repo, else the setting — the whole point of this view is reviewing while the
+ *  tree is dirty, and the whole point of the other mode is that sometimes it
+ *  isn't what you want to see. */
+const committedMode = (store) =>
+    (store?.get("diffAgainst") ?? cfg().get("diffAgainst", "workspace")) ===
+    "commit"
 
 /** A per-branch choice, else the setting. No size heuristic: guessing was one
  *  mechanism too many next to a toggle that takes one click. */
@@ -273,4 +284,4 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, byBranch, changedLines, groupsOf, hunkLine, hunkRange, lineRange, nextHunk, positions, splitOverlap }
+module.exports = { committedMode, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, byBranch, changedLines, groupsOf, hunkLine, hunkRange, lineRange, nextHunk, positions, splitOverlap }

@@ -5,7 +5,7 @@ const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
 const { branchFilesItem, branchGroupItem, branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, hunkItem, prItem, prStackItem, stackItem, unanchoredGroupItem, wholeStackItem } = require("./items")
-const { byBranch, groupsOf, layoutFor, positions, splitOverlap, wholeStack } = require("./model")
+const { byBranch, committedMode, groupsOf, layoutFor, positions, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -47,14 +47,18 @@ class BranchTree extends Tree {
             if (node.group)
                 return node.group.map((e) => fileItem(e, this.reviewed, false))
 
+            const committed = committedMode(this.reviewed)
             const [files, dirty] = await Promise.all([
-                changedFiles(root, node.branch),
+                changedFiles(root, node.branch, committed),
                 contaminated(root, node.branch),
             ])
             const entries = files.map((f) => ({
                 f,
                 branch: node.branch,
                 blob: f.blob,
+                // the row's tick and its warnings both belong to the pane the
+                // row opens, and there are two of those
+                committed,
                 // whole-stack lens only: which of the stack's own branches build
                 // this file. Not gated on `dirty` — a file assembled in steps is
                 // worth flagging whether or not anyone else touches it too

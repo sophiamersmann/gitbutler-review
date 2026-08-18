@@ -154,6 +154,24 @@
                 "icon": "$(link)"
             },
             {
+                "command": "butReview.diffAgainstCommit",
+                "title": "Review Committed Changes Only",
+                "category": "GitButler Review",
+                "icon": "$(git-commit)"
+            },
+            {
+                "command": "butReview.diffAgainstWorkspace",
+                "title": "Review Against the Workspace",
+                "category": "GitButler Review",
+                "icon": "$(edit)"
+            },
+            {
+                "command": "butReview.editHere",
+                "title": "Open Working File",
+                "category": "GitButler Review",
+                "icon": "$(go-to-file)"
+            },
+            {
                 "command": "butReview.viewAsList",
                 "title": "View as List",
                 "category": "GitButler Review",
@@ -243,9 +261,23 @@
                 {
                     "command": "butReview.viewAsGroup",
                     "when": "false"
+                },
+                {
+                    "command": "butReview.editHere",
+                    "when": "butReview.committedPane"
                 }
             ],
             "view/title": [
+                {
+                    "command": "butReview.diffAgainstCommit",
+                    "when": "view == butReview.branches && !butReview.committed",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "butReview.diffAgainstWorkspace",
+                    "when": "view == butReview.branches && butReview.committed",
+                    "group": "navigation@1"
+                },
                 {
                     "command": "butReview.absorb",
                     "when": "view == butReview.uncommitted && !butReview.hasUnanchored",
@@ -254,7 +286,7 @@
                 {
                     "command": "butReview.refresh",
                     "when": "view == butReview.branches",
-                    "group": "navigation"
+                    "group": "navigation@2"
                 },
                 {
                     "command": "butReview.refreshPrs",
@@ -303,6 +335,13 @@
                     "when": "view == butReview.branches && viewItem =~ /^branch:group$/",
                     "group": "inline@2"
                 }
+            ],
+            "editor/title": [
+                {
+                    "command": "butReview.editHere",
+                    "when": "butReview.committedPane",
+                    "group": "navigation"
+                }
             ]
         },
         "configuration": {
@@ -350,6 +389,19 @@
                         "Grouped by directory"
                     ],
                     "markdownDescription": "Default layout for a branch's changed files. Override per branch from the branch row."
+                },
+                "butReview.diffAgainst": {
+                    "type": "string",
+                    "enum": [
+                        "workspace",
+                        "commit"
+                    ],
+                    "enumDescriptions": [
+                        "The right-hand pane is the file on disk: every applied branch's work and your uncommitted edits, marked up to say whose is whose. Editable.",
+                        "The right-hand pane is the branch's own tip, so the diff is only what this branch changed against the one below it. Read-only."
+                    ],
+                    "default": "workspace",
+                    "markdownDescription": "What the right-hand side of a review diff shows. Toggled per repository from the Branches title bar; this is the default for a repository you have not toggled."
                 }
             }
         }

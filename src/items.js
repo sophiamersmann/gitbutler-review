@@ -352,12 +352,14 @@ function groupItem(group) {
 }
 
 function fileItem(entry, reviewed, showDir) {
-    const { f, branch, blob, alsoIn, within = [] } = entry
+    const { f, branch, blob, alsoIn, within = [], committed } = entry
     const { above = [], other = [] } = alsoIn ?? {}
     // "!" turns the row's badge to the warning colour, which any foreign hunk
-    // earns: it says the pane will hold lines that are not this branch's
+    // earns: it says the pane will hold lines that are not this branch's — which
+    // the committed pane, being the branch's own diff, never does
+    const foreign = !committed && !!(above.length || other.length)
     const item = new vscode.TreeItem(
-        uri(FILE, f.file, f.status + (above.length || other.length ? "!" : ""))
+        uri(FILE, f.file, f.status + (foreign ? "!" : ""))
     )
     const churn = f.adds === "-" ? "binary" : `+${f.adds} −${f.dels}` // numstat marks binaries with -
     item.description = [
@@ -381,7 +383,7 @@ function fileItem(entry, reviewed, showDir) {
             other.length
                 ? `\n⚠️ Also changed by **${other.join("**, **")}**, in another stack — parallel work on the same lines, which only meet when one of them lands.`
                 : "",
-            above.length
+            above.length && !committed
                 ? `\n↑ Continued by **${above.join("**, **")}** above it in this stack, already rebased onto yours. The right-hand pane is the workspace file, so it shows those lines too.`
                 : "",
             within.length > 1
@@ -397,7 +399,7 @@ function fileItem(entry, reviewed, showDir) {
         arguments: [branch, f, alsoIn],
     }
     item.contextValue = "file"
-    const key = reviewKey(branch, f.file)
+    const key = reviewKey(branch, f.file, committed)
     item.review = [{ key, blob }]
     item.checkboxState =
         reviewed?.get(key) === blob

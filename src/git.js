@@ -33,8 +33,9 @@ const diffNames = async (root, a, b) =>
  *  the churn, and git prints the two sections one after the other. --no-renames
  *  keeps the paths plain, so they zip. Keying "reviewed" on that blob means a
  *  tick survives a reload but clears itself the moment what the pane shows
- *  changes — an absorb, or simply editing the file. */
-async function changedFiles(root, branch) {
+ *  changes — an absorb, or simply editing the file. The committed pane shows
+ *  the tip itself, so there the raw blob is already the answer. */
+async function changedFiles(root, branch, committed) {
     const out = await git(root, [
         "diff",
         "--no-ext-diff",
@@ -60,6 +61,7 @@ async function changedFiles(root, branch) {
             churn.set(file, { adds, dels })
         }
     }
+    if (committed) return files.map((f) => ({ ...f, ...churn.get(f.file) }))
     const live = await worktreeBlobs(root, branch)
     return files.map((f) => ({
         ...f,
