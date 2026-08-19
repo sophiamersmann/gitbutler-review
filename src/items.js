@@ -254,12 +254,15 @@ function stackItem(stack) {
         "layers",
         new vscode.ThemeColor("butReview.stackIcon")
     )
+    const head = [
+        `\`${stack.cliId}\`${stack.primary ? " — unanchored changes absorb here" : ""}`,
+        // else the next disagreement between the name and the commits is a
+        // puzzle rather than a fact
+        stack.label &&
+            `Renamed — the commits say \`${stackName({ ...stack, label: undefined })}\`.`,
+    ].filter(Boolean)
     item.tooltip = new vscode.MarkdownString(
-        [
-            `\`${stack.cliId}\`${stack.primary ? " — unanchored changes absorb here" : ""}`,
-            "",
-            ...stack.branches.map((b) => `- ${b.name}`),
-        ].join("\n")
+        [...head, "", ...stack.branches.map((b) => `- ${b.name}`)].join("\n")
     )
     item.contextValue = "stack"
     item.stack = stack
@@ -423,6 +426,7 @@ function prStackItem(stack, prs) {
     )
     item.contextValue = "prStack"
     item.prs = prs
+    item.stack = stack // for "Rename Stack…", which both views offer
     return item
 }
 

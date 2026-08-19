@@ -95,12 +95,28 @@ const isDemoted = (name) => {
  *  the author already wrote, then what the branch names agree on, then admit
  *  there is no name. */
 function stackName(stack) {
+    // an explicit name beats any reading of the commits, which is the whole
+    // point of setting one
+    if (stack.label) return stack.label
+    // One vote per branch, not per commit: a branch that took seven commits is
+    // not seven times more what the stack is about than one that took two. By
+    // commits, a six-branch stack read as the topic of its busiest branch long
+    // after the work had moved on.
     const topics = new Map()
-    for (const b of stack.branches)
+    for (const b of stack.branches) {
+        const mine = new Map()
         for (const s of b.subjects) {
             const topic = /^\S+\s*\(([^)]+)\)/.exec(s)?.[1]
-            if (topic) topics.set(topic, (topics.get(topic) ?? 0) + 1)
+            if (topic) mine.set(topic, (mine.get(topic) ?? 0) + 1)
         }
+        // a branch whose own commits disagree still gets the one vote, cast for
+        // whichever topic it says most — newest first, so a fresh topic wins the
+        // branch's own tie
+        const own = [...mine].sort((a, b) => b[1] - a[1])[0]
+        if (own) topics.set(own[0], (topics.get(own[0]) ?? 0) + 1)
+    }
+    // branches come top-first and sort is stable, so a tie goes to the topic
+    // nearest the top of the stack — the work being done now
     const commonest = [...topics].sort((a, b) => b[1] - a[1])[0]
     if (commonest) return commonest[0]
 
@@ -151,6 +167,19 @@ const reviewKey = (branch, file, committed) =>
     `reviewed:${committed ? "commit:" : ""}${branch.key ?? branch.name}:${file}`
 
 const layoutKey = (branch) => `layout:${branch.key ?? branch.name}`
+
+/** Where a stack's given name is kept. A stack has no id of its own — `cliId`
+ *  is handed out afresh by every `but status` — so the name hangs off a branch,
+ *  and the bottom one is written to: the top changes every time you push
+ *  another branch on. But the bottom lands long before the stack is done, so
+ *  the name is looked for on every branch still in the stack, bottom-first. */
+const stackKeys = (stack) => stack.branches.map((b) => `stackName:${b.name}`)
+
+const stackKey = (stack) => stackKeys(stack).at(-1)
+
+const stackLabel = (stack, overrides) =>
+    overrides &&
+    [...stackKeys(stack)].reverse().map((k) => overrides.get(k)).find(Boolean)
 
 /** Does the right-hand pane show the branch tip rather than the workspace? Per
  *  repo, else the setting — the whole point of this view is reviewing while the
@@ -284,4 +313,4 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { committedMode, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, byBranch, changedLines, groupsOf, hunkLine, hunkRange, lineRange, nextHunk, positions, splitOverlap }
+module.exports = { committedMode, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, byBranch, changedLines, groupsOf, hunkLine, hunkRange, lineRange, nextHunk, positions, splitOverlap }

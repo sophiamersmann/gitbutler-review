@@ -6,7 +6,7 @@ const { stacksOf, status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
 const { BASE, DECORATION, FILE, PR } = require("./src/items")
-const { committedMode, layoutKey, nextHunk } = require("./src/model")
+const { committedMode, layoutKey, nextHunk, stackKey, stackKeys, stackName } = require("./src/model")
 const { BranchTree, PrTree, UncommittedTree } = require("./src/trees")
 
 function activate(context) {
@@ -17,7 +17,7 @@ function activate(context) {
         set: (k, v) => context.workspaceState.update(k, v),
     }
     const tree = new BranchTree(store)
-    const prs = new PrTree()
+    const prs = new PrTree(store)
     const branchView = vscode.window.createTreeView("butReview.branches", {
         treeDataProvider: tree,
     })
@@ -373,6 +373,30 @@ function activate(context) {
         }),
         vscode.window.registerTreeDataProvider("butReview.prs", prs),
         dirtyView,
+
+        // A stack has no name of its own, so the one shown is read off the
+        // `(topic)` its branches' commits agree on — and when that reading is
+        // wrong, or the work has moved on from what the commits say, this is how
+        // you say so. Keyed on the bottom branch, so it survives pushing another
+        // branch on top.
+        vscode.commands.registerCommand("butReview.renameStack", async (node) => {
+            const stack = node.stack
+            const name = await vscode.window.showInputBox({
+                title: "Name this stack",
+                value: stackName(stack),
+                prompt: "Leave it empty to go back to the name its commits imply.",
+            })
+            if (name === undefined) return // dismissed, which is not "clear it"
+            // clear every branch's, then write the bottom's: a stack renamed
+            // either side of a landing would otherwise carry two names, and the
+            // lookup order alone would decide which one you see
+            for (const k of stackKeys(stack)) store.set(k, undefined)
+            if (name.trim()) store.set(stackKey(stack), name.trim())
+            tree.refresh()
+            // not refresh(): the PR view's rows are network, and only their
+            // stack heading changed
+            prs.changed.fire()
+        }),
 
         vscode.commands.registerCommand("butReview.openUrl", (node) =>
             vscode.env.openExternal(vscode.Uri.parse(node.url))

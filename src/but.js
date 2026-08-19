@@ -2,7 +2,7 @@
 // from what they return.
 
 const { run } = require("./exec")
-const { changedLines, isDemoted } = require("./model")
+const { changedLines, isDemoted, stackLabel } = require("./model")
 
 // Three views ask for status on every refresh and it costs ~230ms, so collapse
 // the burst. Short-lived rather than explicitly invalidated: a stale read can
@@ -29,11 +29,14 @@ status.invalidate = () => (statusCache = { at: 0, value: undefined })
  *  fact survives without dictating position.
  *  Branches stay top-first here so `base` keeps referring to the next entry;
  *  views reverse at render time. */
-function stacksOf(st) {
+function stacksOf(st, overrides) {
     return st.stacks
         .map((stack, lane) => ({
             cliId: stack.cliId,
             primary: lane === 0,
+            // stamped once here rather than threaded through the four rows that
+            // name a stack, the way a branch already carries its own `label`
+            label: stackLabel(stack, overrides),
             // a stack of nothing but docs is never the thing you came here for
             demoted: stack.branches.every((b) => isDemoted(b.name)),
             activity: stack.branches

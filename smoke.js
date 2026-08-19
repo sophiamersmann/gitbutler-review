@@ -214,6 +214,50 @@ for (const s of stacks) {
 }
 console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
 
+// What a stack is called, which is a vote and so has ties and outliers
+{
+    const of = (...topics) => ({
+        branches: topics.map((t, i) => ({
+            name: `b${i}`,
+            subjects: t.map((x) => `🔨🤖 ${x ? `(${x}) ` : ""}did a thing`),
+        })),
+    })
+    const cases = [
+        [api.stackName(of(["a"], ["a"], ["b", "b", "b", "b"])), "a", "the busiest branch does not outvote the rest"],
+        [api.stackName(of(["a"], ["b"])), "a", "a tie goes to the branch nearest the top"],
+        [api.stackName(of(["a", "b", "b"], ["c"])), "b", "a branch votes for whatever it says most"],
+        [api.stackName(of([""], [""])), "Stack of 2", "no topics anywhere, and no name to give"],
+    ].filter(([got, want]) => got !== want)
+    for (const [got, want, what] of cases)
+        console.log(`PROBLEM  stack name: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (cases.length) process.exitCode = 1
+    // an explicit name, which is what the vote is there to be overruled by
+    const named = { ...of(["a"], ["b"]), label: "whatever I say" }
+    const key = api.stackKey({ branches: [{ name: "top" }, { name: "bottom" }] })
+    const lens = api.wholeStack({
+        branches: [
+            { name: "top", base: "bottom" },
+            { name: "bottom", base: "master" },
+        ],
+        label: "renamed",
+    })
+    const more = [
+        [api.stackName(named), "whatever I say", "an explicit name beats the vote"],
+        [api.stackName({ ...named, label: undefined }), "a", "and without one the vote still decides"],
+        [key, "stackName:bottom", "a rename is written on the bottom branch"],
+        // the bottom lands long before the stack does, and the name has to
+        // outlive it
+        [api.stackLabel({ branches: [{ name: "top" }, { name: "mid" }] }, new Map([["stackName:mid", "kept"]])), "kept", "and is still found once it is no longer the bottom"],
+        [api.stackLabel({ branches: [{ name: "top" }] }, new Map()), undefined, "no override, no name"],
+        [lens.label, "renamed (whole stack)", "the whole-stack lens follows the rename"],
+        [lens.key, "stack:bottom", "but its ticks do not"],
+    ].filter(([got, want]) => got !== want)
+    for (const [got, want, what] of more)
+        console.log(`PROBLEM  stack name: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (more.length) process.exitCode = 1
+    console.log(`ok: stack names — ${11 - cases.length - more.length}/11 cases`)
+}
+
 const prs = await api.listPrs(root)
 const byBranch = new Map(prs.map((p) => [p.headRefName, p]))
 let prRows = 0

@@ -114,7 +114,7 @@ class BranchTree extends Tree {
 
     /** A one-branch stack is shown as the branch itself — no pointless wrapper. */
     async topLevel(root) {
-        const stacks = stacksOf(await status(root))
+        const stacks = stacksOf(await status(root), this.overrides)
         const files = await branchFiles(root, stacks)
         this.overlap = overlapMap(files)
         this.where = positions(stacks)
@@ -190,6 +190,12 @@ class UncommittedTree extends Tree {
  *  GitHub extension cannot show, since it has no idea stacks exist. Lazy and
  *  separately refreshed: `gh` is network, unlike everything else here. */
 class PrTree extends Tree {
+    constructor(store) {
+        super()
+        // only for the stack names, which the two views have to agree on
+        this.overrides = store
+    }
+
     refresh() {
         this.cache = undefined
         this.threads = undefined
@@ -212,7 +218,7 @@ class PrTree extends Tree {
                 .catch(() => {})
                 .then(() => this.changed.fire())
 
-            const stacks = stacksOf(await status(root))
+            const stacks = stacksOf(await status(root), this.overrides)
             const byBranch = new Map(prs.map((p) => [p.headRefName, p]))
 
             const rows = []

@@ -142,6 +142,12 @@
                 "icon": "$(discard)"
             },
             {
+                "command": "butReview.renameStack",
+                "title": "Rename Stack…",
+                "category": "GitButler Review",
+                "icon": "$(edit)"
+            },
+            {
                 "command": "butReview.openUrl",
                 "title": "Open Pull Request in Browser",
                 "category": "GitButler Review",
@@ -247,6 +253,10 @@
                     "when": "false"
                 },
                 {
+                    "command": "butReview.renameStack",
+                    "when": "false"
+                },
+                {
                     "command": "butReview.openUrl",
                     "when": "false"
                 },
@@ -334,6 +344,11 @@
                     "command": "butReview.viewAsList",
                     "when": "view == butReview.branches && viewItem =~ /^branch:group$/",
                     "group": "inline@2"
+                },
+                {
+                    "command": "butReview.renameStack",
+                    "when": "(view == butReview.branches && viewItem == stack) || (view == butReview.prs && viewItem == prStack)",
+                    "group": "1_modify"
                 }
             ],
             "editor/title": [
