@@ -25,7 +25,7 @@ status.invalidate = () => (statusCache = { at: 0, value: undefined })
 /** Applied stacks, each branch paired with the branch below it.
  *  Ordered by most recent commit — `but`'s own order is the app's lane order,
  *  which says nothing about what you are working on. The one thing it did
- *  encode, that lane 0 is where unanchored changes land, becomes a flag so the
+ *  encode, that lane 0 is where unplaced changes land, becomes a flag so the
  *  fact survives without dictating position.
  *  Branches stay top-first here so `base` keeps referring to the next entry;
  *  views reverse at render time. */
@@ -162,7 +162,7 @@ async function hunkIds(root) {
 /** The plan reports one entry per hunk, so a file with three hunks in one commit
  *  arrives as three rows with the same name and nothing but a range to tell them
  *  apart. One row per file, hunks underneath — and the split into anchored and
- *  unanchored happens first, since a file can be both. */
+ *  unplaced happens first, since a file can be both. */
 function byPath(rows) {
     const out = new Map()
     for (const r of rows) {
@@ -182,7 +182,7 @@ function byPath(rows) {
 async function uncommittedPlan(root, st) {
     const changes = st.uncommittedChanges
     // With a single applied branch there is nowhere else a change could go, so
-    // "unanchored" would be noise that teaches you to ignore the warning — and
+    // "unplaced" would be noise that teaches you to ignore the warning — and
     // the per-file plans that decide it are one `but` process each, so don't
     // ask when the answer can't matter.
     const ambiguous = st.stacks.flatMap((s) => s.branches).length > 1
@@ -214,7 +214,7 @@ async function uncommittedPlan(root, st) {
     const changeOf = new Map(changes.map((c) => [c.filePath, c]))
 
     const groups = []
-    const unanchored = []
+    const unplaced = []
     for (const k of batch.commits) {
         const meta = commitMeta.get(k.commit_id) ?? {}
         const files = []
@@ -231,16 +231,16 @@ async function uncommittedPlan(root, st) {
                 hunkTotal: counts.get(f.path),
             }
             const reason = reasons.get(`${f.path}\0${k.commit_id}`) ?? k.reason
-            if (ambiguous && reason === "default_stack") unanchored.push(row)
+            if (ambiguous && reason === "default_stack") unplaced.push(row)
             else files.push(row)
         }
         if (files.length)
             groups.push({ commit: k, meta, files: byPath(files) })
     }
-    const strays = byPath(unanchored)
+    const strays = byPath(unplaced)
     return {
         groups,
-        unanchored: strays,
+        unplaced: strays,
         // files, not plan entries — `total_files` counts the latter
         total:
             groups.reduce((n, g) => n + g.files.length, 0) + strays.length,

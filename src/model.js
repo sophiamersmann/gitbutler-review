@@ -205,6 +205,21 @@ function groupsOf(entries) {
         .map(([dir, files]) => ({ dir, files }))
 }
 
+/** The rows a grouped branch emits, in path order: a folder per directory,
+ *  except where the folder would be worse than the files it holds. A directory
+ *  of one is two rows and an expand to reach a single file, and the repo root is
+ *  not a directory anyone thinks of as one — a folder called "." reads as a bug.
+ *  Both promote their files in place, where the directory would have sorted, so
+ *  a stray still tells you where it lives. Collected at the end instead they
+ *  would read as a second list you have to search separately. */
+function groupRows(entries) {
+    return groupsOf(entries).flatMap((g) =>
+        g.dir === "." || g.files.length === 1
+            ? g.files.map((file) => ({ file }))
+            : [{ group: g }]
+    )
+}
+
 /** The absorb plan as branches rather than a flat list of commits: two commits
  *  on one branch belong together, and the branch was being repeated as every
  *  commit row's description anyway.
@@ -313,4 +328,4 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { committedMode, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, byBranch, changedLines, groupsOf, hunkLine, hunkRange, lineRange, nextHunk, positions, splitOverlap }
+module.exports = { committedMode, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, byBranch, changedLines, groupRows, hunkLine, hunkRange, lineRange, nextHunk, positions, splitOverlap }

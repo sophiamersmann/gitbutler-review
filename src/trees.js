@@ -4,8 +4,8 @@ const vscode = require("vscode")
 const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
-const { branchFilesItem, branchGroupItem, branchItem, commitGroupItem, dirtyFileItem, fileItem, groupItem, hunkItem, prItem, prStackItem, stackItem, unanchoredGroupItem, wholeStackItem } = require("./items")
-const { byBranch, committedMode, groupsOf, layoutFor, positions, splitOverlap, wholeStack } = require("./model")
+const { branchGroupItem, branchItem, dirtyFileItem, fileItem, groupItem, hunkItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
+const { byBranch, committedMode, groupRows, layoutFor, positions, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -81,18 +81,11 @@ class BranchTree extends Tree {
             }))
             if (layoutFor(node.branch, this.overrides) === "list")
                 return entries.map((e) => fileItem(e, this.reviewed, true))
-            // a group of one is two rows and an expand to reach a single file,
-            // so it stays a plain row. Directories first, then the strays —
-            // the convention every file manager uses.
-            const grouped = groupsOf(entries)
-            return [
-                ...grouped
-                    .filter((g) => g.files.length > 1)
-                    .map(groupItem),
-                ...grouped
-                    .filter((g) => g.files.length === 1)
-                    .map((g) => fileItem(g.files[0], this.reviewed, true)),
-            ]
+            return groupRows(entries).map((r) =>
+                r.group
+                    ? groupItem(r.group)
+                    : fileItem(r.file, this.reviewed, true)
+            )
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
@@ -136,47 +129,26 @@ class UncommittedTree extends Tree {
         const root = repoRoot()
         if (!root) return []
         try {
-            // `commits`, not `branch`: BranchTree means something else by that
-            if (node?.commits) {
-                // always, even for a single commit: this row is what the
-                // branch's absorb acts on, and a tree that changes shape with
-                // the commit count is one you have to read twice
-                return [
-                    branchFilesItem(node.branch),
-                    ...node.commits.map((g) => commitGroupItem(g)),
-                ]
-            }
+            // a branch row and the Unplaced row both carry their files
             if (node?.rows)
-                return node.rows.map((r) => dirtyFileItem(r, node.unanchored))
-            if (node?.group)
-                return node.group.files.map((r) => dirtyFileItem(r, false))
+                return node.rows.map((r) => dirtyFileItem(r, node.unplaced))
             if (node?.row)
                 return node.row.hunks.map((_, i) =>
-                    hunkItem(node.row, i, node.unanchored)
+                    hunkItem(node.row, i, node.unplaced)
                 )
             if (node) return []
 
             const st = await status(root)
             const plan = await uncommittedPlan(root, st)
-            // hides the view's Absorb button: with a stray in the list the
-            // command can only refuse, and a button that never works is worse
-            // than no button. Set here because this is where the plan already
-            // is — the command keeps its own guard for the palette, and for a
-            // plan that changed since the last render.
-            vscode.commands.executeCommand(
-                "setContext",
-                "butReview.hasUnanchored",
-                plan.unanchored.length > 0
-            )
-            // unanchored last: the commit groups are the plan you skim and
+            // unplaced last: the branch rows are the plan you skim and
             // accept, and the strays are the leftovers you deal with after —
             // above them they pushed the whole plan down the panel
             return [
                 ...byBranch(plan.groups, positions(stacksOf(st))).map(
                     branchGroupItem
                 ),
-                ...(plan.unanchored.length
-                    ? [unanchoredGroupItem(plan.unanchored)]
+                ...(plan.unplaced.length
+                    ? [unplacedGroupItem(plan.unplaced)]
                     : []),
             ]
         } catch (e) {

@@ -603,29 +603,19 @@ console.log(
     const dirty = new UncommittedTree()
     const kids = async (nodes) =>
         (await Promise.all(nodes.map((n) => dirty.getChildren(n)))).flat()
-    // the two halves of the top level sit at different depths: a branch holds
-    // commits, the strays hold their files directly
+    // the top level is branch rows and the strays, and both carry their files
+    // directly — there is no level in between
     const top = await dirty.getChildren()
     const branches = top.filter((n) => n.contextValue === "branchGroup")
-    const strayGroup = top.filter((n) => n.contextValue === "unanchoredGroup")
-    // a branch holds its commits and a summary row listing everything it absorbs
-    const under = await kids(branches)
-    const groups = under.filter((n) => n.contextValue === "commitGroup")
-    const summaries = under.filter((n) => n.contextValue === "branchFiles")
+    const strayGroup = top.filter((n) => n.contextValue === "unplacedGroup")
     // every file row, not just the expandable ones — a single-hunk file still
     // has to resolve its ID, and this is the only place that proves it
-    const anchored = await kids(groups)
-    const summarised = await kids(summaries)
-    const files = [...anchored, ...summarised, ...(await kids(strayGroup))]
+    const anchored = await kids(branches)
+    const files = [...anchored, ...(await kids(strayGroup))]
     const hunks = await kids(files)
-    const rows = [...top, ...under, ...files, ...hunks]
-    const strays = top.findIndex((n) => n.contextValue === "unanchoredGroup")
+    const rows = [...top, ...files, ...hunks]
+    const strays = top.findIndex((n) => n.contextValue === "unplacedGroup")
     const fmt = (r) => (r ? api.lineRange(r.from, r.to) : undefined)
-    const SOLE = {
-        commit: { commit_summary: "one commit", commit_id: "c1" },
-        meta: { branch: "b" },
-        files: [],
-    }
     const cases = [
         [hunks.filter((h) => !h.contextValue).length, 0, "every hunk row resolved a CLI ID"],
         // one id twice in a tree is VSCode's problem, not ours to discover later
@@ -638,19 +628,16 @@ console.log(
         [hunks.filter((h) => /\d/.test(h.label)).every((h) => h.command.arguments[1] === Number(/\d+/.exec(h.label)[0])), true, "a hunk row opens on the line it names"],
         [files.filter((f) => f.row.hunkMeta[0]?.from).every((f) => f.command.arguments[1] === f.row.hunkMeta[0].from), true, "a file row opens on its first changed line"],
         [files.filter((f) => !f.target.args.length).length, 0, "so did every file row"],
-        [strays === -1 || strays === top.length - 1, true, "unanchored sits last"],
+        [strays === -1 || strays === top.length - 1, true, "unplaced sits last"],
         // a commit under the wrong branch row would be a lie about where the
         // change lands, which is the one thing this view exists to say
-        [branches.every((b) => b.commits.every((g) => (g.meta.branch ?? "no branch") === b.label)), true, "every commit sits under its own branch"],
-        [branches.reduce((n, b) => n + b.commits.reduce((m, g) => m + g.files.length, 0), 0), anchored.length, "the branch rows hold every anchored file"],
-        // the summary row is the branch's files and nothing else: short, and it
-        // would be a lie the moment a commit's files stopped reaching it
-        [branches.reduce((n, b) => n + b.commits.reduce((m, g) => m + g.files.length, 0), 0), summarised.length, "and a summary row holds its branch's again"],
-        [summaries.length, branches.length, "every branch has one, whatever its commit count"],
-        [groups.every((g) => g.collapsibleState === 1), true, "and every commit row is collapsed under it"],
-        // a clean tree leaves every case above vacuous, and this is the one
-        // that changes shape with the commit count
-        [(await dirty.getChildren({ commits: [SOLE], branch: { name: "b", files: 1, groups: [SOLE] } })).map((r) => `${r.contextValue}/${r.collapsibleState}`).join(" "), "branchFiles/2 commitGroup/1", "a branch with one commit still gets a summary row"],
+        [branches.every((b) => b.branch.groups.every((g) => (g.meta.branch ?? "no branch") === b.label)), true, "every commit's files sit under its own branch"],
+        // exactly once: a commit level above these rows listed every file twice,
+        // which is the duplication this shape exists to not have
+        [branches.reduce((n, b) => n + b.branch.groups.reduce((m, g) => m + g.files.length, 0), 0), anchored.length, "the branch rows hold every anchored file exactly once"],
+        // a third argument is what used to make a clicked row expand itself,
+        // dumping a file's hunks into the tree every time its diff was opened
+        [files.every((f) => f.command.arguments.length === 2), true, "and no file row expands the tree when clicked"],
         [api.hunkRange("@531,6 +531,8"), "L531–538", "a bodyless hunk falls back to its span"],
         [api.hunkRange("@1,3 +7"), "L7", "a one-line hunk names one line"],
         // the span is not the edit: git pads a hunk with three lines of context
@@ -676,18 +663,68 @@ console.log(
         console.log(`PROBLEM  changes: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
     if (cases.length) process.exitCode = 1
     console.log(
-        `ok: changes — ${branches.length} branches, ${groups.length} commits, ${summaries.length} summary rows, ${files.length} file rows, ${hunks.length} hunk rows, all addressable`
+        `ok: changes — ${branches.length} branches, ${files.length} file rows, ${hunks.length} hunk rows, all addressable`
     )
 }
 
-const groups = api.groupsOf(entries)
-const singles = groups.filter((g) => g.files.length === 1)
-const groupRows = groups.filter((g) => g.files.length > 1).map(api.groupItem)
+// a file row's label is its uri, a folder row's is a plain string
+const rowLabel = (r) => (r.label?.path ? r.label.path.slice(1) : r.label)
+
+// the rows the tree actually emits in grouped mode, built the way it builds
+// them: model decides folder-or-file, items turns each into a row
+const treeRows = api
+    .groupRows(entries)
+    .map((r) =>
+        r.group ? api.groupItem(r.group) : api.fileItem(r.file, store, true)
+    )
+const folders = treeRows.filter((r) => r.group)
 const covered =
-    groupRows.reduce((n, r) => n + r.group.length, 0) + singles.length
+    folders.reduce((n, r) => n + r.group.length, 0) +
+    (treeRows.length - folders.length)
 console.log(
-    `ok: ${groupRows.length} groups + ${singles.length} promoted singletons covering ${covered}/${entries.length} files; groups carry no checkbox (${groupRows[0].checkboxState === undefined ? "confirmed" : "STILL SET (bug)"})`
+    `ok: ${folders.length} folders + ${treeRows.length - folders.length} plain file rows covering ${covered}/${entries.length} files; folders carry no checkbox (${folders.every((r) => r.checkboxState === undefined) ? "confirmed" : "STILL SET (bug)"})`
 )
+
+// one path-sorted run, so a promoted file sits where its directory would have
+const dirs = treeRows.map((r) =>
+    path.dirname(r.group ? r.group[0].f.file : rowLabel(r))
+)
+const unsorted = dirs.filter((d, i) => i && dirs[i - 1].localeCompare(d) > 0)
+if (unsorted.length)
+    console.log(
+        `PROBLEM  tree layout: rows out of path order at ${unsorted.join(", ")}`
+    )
+if (unsorted.length) process.exitCode = 1
+console.log(`ok: tree layout — ${treeRows.length} rows in path order`)
+
+// the repo root, synthetic because whether a live branch touches a top-level
+// file is luck, and this is the one case the rule exists for. Two of them, so
+// it isn't the singleton rule doing the work, and a sibling directory to prove
+// they promote in place rather than to the end. Path-ordered, as `git diff
+// --raw` gives them: no row sorts the files within its own run.
+{
+    const at = (file) => ({
+        f: { file, status: "M", adds: "1", dels: "1" },
+        branch,
+        alsoIn: { above: [], other: [] },
+    })
+    const synthetic = api
+        .groupRows([at("README.md"), at("package.json"), at("src/a.js"), at("src/b.js")])
+        .map((r) =>
+            r.group ? api.groupItem(r.group) : api.fileItem(r.file, store, true)
+        )
+    const shape = synthetic.map((r) => (r.group ? `[${r.label}]` : rowLabel(r)))
+    const cases = [
+        [shape.join(" "), "README.md package.json [src]", "root files promote in place, ahead of the folders"],
+        [synthetic.filter((r) => r.group).length, 1, "and no folder stands for the root"],
+        // "." as a description would be the same confusion in smaller print
+        [synthetic.some((r) => r.description?.split("  ·  ").includes(".")), false, "nor does a row print it as its directory"],
+    ].filter(([got, want]) => got !== want)
+    for (const [got, want, what] of cases)
+        console.log(`PROBLEM  repo root: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (cases.length) process.exitCode = 1
+    console.log(`ok: repo root — ${shape.join(" ")}`)
+}
 
 // a per-branch override beats the setting; nothing else has a say
 const a = { name: "a" }
@@ -700,7 +737,7 @@ console.log(
 )
 
 console.log(`\n▾ ${branch.name} — grouped`)
-for (const r of groupRows.slice(0, 8))
-    console.log(`     ${String(r.label).padEnd(18)} ${r.description}`)
-if (groupRows.length > 8) console.log(`     … ${groupRows.length - 8} more`)
+for (const r of treeRows.slice(0, 8))
+    console.log(`     ${String(rowLabel(r)).padEnd(46)} ${r.description}`)
+if (treeRows.length > 8) console.log(`     … ${treeRows.length - 8} more`)
 })()

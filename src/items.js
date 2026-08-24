@@ -26,44 +26,19 @@ const HUNK_ICON = {
     deleted: ["diff-removed", "gitDecoration.deletedResourceForeground"],
 }
 
-function unanchoredGroupItem(rows) {
+function unplacedGroupItem(rows) {
     const item = new vscode.TreeItem(
-        "Unanchored",
+        "Unplaced",
         vscode.TreeItemCollapsibleState.Expanded
     )
-    item.description = "no commit depends on these"
-    // no icon: this row is the absence of a branch, and its label and description
-    // say that already. The ⚠️ stays in the file tooltips, attached to something
-    // you can act on.
+    // no description and no icon: the label is the whole fact, and the ⚠️ stays
+    // in the file tooltips, attached to something you can act on.
     item.tooltip =
         "Absorb would drop these in the primary lane by default, not because anything depends on them. Place them explicitly with \"Amend Into…\"."
-    item.contextValue = "unanchoredGroup"
-    item.id = "unanchored"
+    item.contextValue = "unplacedGroup"
+    item.id = "unplaced"
     item.rows = rows
-    item.unanchored = true
-    return item
-}
-
-/** Everything the branch would absorb, in one list — the commit rows below say
- *  which commit each file lands in, and this says what the branch gets. A file
- *  whose hunks split across two commits sits here twice, once per commit, since
- *  a merged row could no longer name what it absorbs into. */
-function branchFilesItem(branch) {
-    const item = new vscode.TreeItem(
-        "All changes",
-        vscode.TreeItemCollapsibleState.Expanded
-    )
-    item.description = `${branch.files} file${branch.files === 1 ? "" : "s"}`
-    item.iconPath = new vscode.ThemeIcon("files")
-    item.contextValue = "branchFiles"
-    item.id = `branch-files:${branch.name}`
-    // copies, so `scope` can keep these rows' ids apart from the same rows under
-    // their commit — one id twice in a tree is a row VSCode drops
-    item.rows = branch.groups
-        .flatMap((g) => g.files)
-        .map((r) => ({ ...r, scope: "b" }))
-        .sort((a, b) => a.path.localeCompare(b.path))
-    item.unanchored = false
+    item.unplaced = true
     return item
 }
 
@@ -91,36 +66,18 @@ function branchGroupItem(branch) {
     // absorb has no branch to be handed — so that row gets no button
     if (branch.groups[0]?.meta.branch) item.contextValue = "branchGroup"
     item.id = `branch:${branch.name}`
-    item.commits = branch.groups
+    // every file the branch would absorb, in one list. Which commit each lands
+    // in is in the row's own tooltip: the branch is what you place work by, and
+    // a commit level above these rows listed every file twice.
+    item.rows = branch.groups
+        .flatMap((g) => g.files)
+        .sort((a, b) => a.path.localeCompare(b.path))
+    item.unplaced = false
     item.branch = branch
     return item
 }
 
-/** Always collapsed: "All changes" above it is the list you skim, and this is
- *  the same files again, split by where each one lands. */
-function commitGroupItem(group) {
-    const item = new vscode.TreeItem(
-        group.commit.commit_summary,
-        vscode.TreeItemCollapsibleState.Collapsed
-    )
-    const n = group.files.length
-    item.description = `${n} file${n === 1 ? "" : "s"}`
-    item.iconPath = new vscode.ThemeIcon("git-commit")
-    item.tooltip = new vscode.MarkdownString(
-        [
-            `**${group.commit.commit_summary}**`,
-            `_${group.commit.reason_description}_`,
-        ]
-            .filter(Boolean)
-            .join("  \n")
-    )
-    item.contextValue = "commitGroup"
-    item.id = `commit:${group.commit.commit_id}`
-    item.group = group
-    return item
-}
-
-function dirtyFileItem(row, unanchored) {
+function dirtyFileItem(row, unplaced) {
     const letter = LETTER[row.change?.changeType] ?? "M"
     // one hunk is the whole file, so its child row would say the same thing twice
     const item = new vscode.TreeItem(
@@ -132,8 +89,8 @@ function dirtyFileItem(row, unanchored) {
     // a collapsible row with nothing but a resourceUri gets the icon theme's
     // folder glyph, which a file with two hunks is not
     item.iconPath = vscode.ThemeIcon.File
-    // a file whose hunks split across two commits has a row under each, and
-    // neither of them is the file
+    // a file whose hunks split across two commits has a row per commit under
+    // the branch, and neither of them is the file
     const whole = !row.hunkTotal || row.hunks.length === row.hunkTotal
     // one whole hunk is the file, so name its lines; anything else is a count,
     // since the child rows name the ranges once expanded — and listing them
@@ -143,7 +100,7 @@ function dirtyFileItem(row, unanchored) {
         : row.hunks.length > 1
           ? `${row.hunks.length} hunks`
           : rangeOf(row, 0)
-    // where an unanchored change would land is in the tooltip, not the row: the
+    // where an unplaced change would land is in the tooltip, not the row: the
     // group above it already says the only thing that matters, that no commit
     // asked for it. Churn as the branch view writes it, so a file reads the same
     // in both trees.
@@ -155,7 +112,7 @@ function dirtyFileItem(row, unanchored) {
     item.tooltip = new vscode.MarkdownString(
         [
             `\`${row.path}\``,
-            unanchored
+            unplaced
                 ? `⚠️ Nothing depends on this. Absorb would put it on **${row.meta.branch}** simply because that lane is first.`
                 : `Absorbs into **${row.commit.commit_summary}**`,
             ranges && `hunks: ${ranges}`,
@@ -169,8 +126,7 @@ function dirtyFileItem(row, unanchored) {
     item.command = {
         command: "butReview.openDirty",
         title: "Open Changes",
-        // the third argument only for a row that has hunks to show
-        arguments: [row.change, jumpLine(row, 0), row.hunks.length > 1],
+        arguments: [row.change, jumpLine(row, 0)],
     }
     // the whole file when the row is the whole file, its own hunks otherwise —
     // `but` takes several IDs of one kind, so both are one call
@@ -179,13 +135,13 @@ function dirtyFileItem(row, unanchored) {
         : row.hunkMeta.map((h) => h.id).filter(Boolean)
     // nothing addressable, no actions: a button that cannot name its target
     if (args.length)
-        item.contextValue = unanchored ? "unanchoredFile" : "dirtyFile"
+        item.contextValue = unplaced ? "unplacedFile" : "dirtyFile"
     // VSCode derives an id from the resourceUri when none is given, and a file
-    // whose hunks lock to two commits has a row under each — same uri, twice in
-    // one tree. Explicit and stable, so expansion state survives a reword too.
-    item.id = rowId(row, unanchored)
+    // whose hunks lock to two commits has two rows — same uri, twice in one
+    // tree. Explicit and stable, so expansion state survives a reword too.
+    item.id = rowId(row, unplaced)
     item.row = row
-    item.unanchored = unanchored
+    item.unplaced = unplaced
     item.target = {
         args,
         // absorb takes one source and routes each hunk itself, so the file ID
@@ -201,7 +157,7 @@ function dirtyFileItem(row, unanchored) {
 /** A hunk of a multi-hunk file: the same three actions as its parent, applied
  *  to one range. `but` addresses hunks as `<file>:<hunk>`, so absorbing or
  *  discarding one is the same call with a longer ID. */
-function hunkItem(row, i, unanchored) {
+function hunkItem(row, i, unplaced) {
     const meta = row.hunkMeta?.[i] ?? {}
     // a hunk that deletes the file names no lines, because there are none left
     const label = rangeOf(row, i) ?? "whole file"
@@ -214,7 +170,7 @@ function hunkItem(row, i, unanchored) {
     item.tooltip = new vscode.MarkdownString(
         [
             `\`${row.path}\` — ${label}`,
-            unanchored
+            unplaced
                 ? `⚠️ Nothing depends on this hunk. Absorb would put it on **${row.meta.branch}** simply because that lane is first.`
                 : `Absorbs into **${row.commit.commit_summary}**`,
         ].join("  \n")
@@ -224,8 +180,8 @@ function hunkItem(row, i, unanchored) {
         title: "Open Changes",
         arguments: [row.change, jumpLine(row, i)],
     }
-    if (meta.id) item.contextValue = unanchored ? "unanchoredHunk" : "dirtyHunk"
-    item.id = `${rowId(row, unanchored)}:${i}`
+    if (meta.id) item.contextValue = unplaced ? "unplacedHunk" : "dirtyHunk"
+    item.id = `${rowId(row, unplaced)}:${i}`
     // deliberately no `.row`: that is what marks a node as having hunk children,
     // and a hunk row's children would be itself
     item.target = {
@@ -255,7 +211,7 @@ function stackItem(stack) {
         new vscode.ThemeColor("butReview.stackIcon")
     )
     const head = [
-        `\`${stack.cliId}\`${stack.primary ? " — unanchored changes absorb here" : ""}`,
+        `\`${stack.cliId}\`${stack.primary ? " — unplaced changes absorb here" : ""}`,
         // else the next disagreement between the name and the commits is a
         // puzzle rather than a fact
         stack.label &&
@@ -365,6 +321,7 @@ function fileItem(entry, reviewed, showDir) {
         uri(FILE, f.file, f.status + (foreign ? "!" : ""))
     )
     const churn = f.adds === "-" ? "binary" : `+${f.adds} −${f.dels}` // numstat marks binaries with -
+    const dir = path.dirname(f.file) // "." for a file at the repo root
     item.description = [
         churn,
         // whole-stack lens only: this file was built in steps, which is where a
@@ -374,8 +331,9 @@ function fileItem(entry, reviewed, showDir) {
         // after yours, and in a stack where that is true of every file the note
         // was the same sentence twenty times over — the colour already says it
         other.length ? `⚠ also in ${other.join(", ")}` : "",
-        // in tree mode the folder row already says where the file lives
-        !other.length && showDir ? path.dirname(f.file) : "",
+        // in tree mode the folder row already says where the file lives, and
+        // the repo root has no row and no name worth printing
+        !other.length && showDir && dir !== "." ? dir : "",
     ]
         .filter(Boolean)
         .join("  ·  ")
@@ -474,11 +432,11 @@ function prItem(row) {
     return item
 }
 
-/** Unique per row in the tree: the same path can sit under a commit group and
- *  under Unanchored at once, under two commit groups at once, and under the
- *  branch's own summary row as well — which is what `scope` keeps apart. */
-const rowId = (row, unanchored) =>
-    `${row.scope ?? (unanchored ? "u" : "a")}:${row.commit.commit_id}:${row.path}`
+/** Unique per row in the tree: a file whose hunks lock to two commits has a row
+ *  under the branch for each, and the same path can sit under a branch and under
+ *  Unplaced at once — so both the commit and the section are in the id. */
+const rowId = (row, unplaced) =>
+    `${unplaced ? "u" : "a"}:${row.commit.commit_id}:${row.path}`
 
 /** Pure new code, pure removal, or a rewrite — the distinction the file's own
  *  A/M/D status can't make, since every one of these lives in a modified file. */
@@ -506,4 +464,4 @@ function churn(hunks) {
     return `+${adds} −${dels}`
 }
 
-module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unanchoredGroupItem, branchFilesItem, branchGroupItem, commitGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, groupItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, groupItem, fileItem, prStackItem, prItem }

@@ -290,7 +290,7 @@
                 },
                 {
                     "command": "butReview.absorb",
-                    "when": "view == butReview.uncommitted && !butReview.hasUnanchored",
+                    "when": "view == butReview.uncommitted",
                     "group": "navigation"
                 },
                 {
@@ -318,12 +318,12 @@
                 {
                     "command": "butReview.amendInto",
                     "when": "view == butReview.uncommitted && viewItem =~ /(File|Hunk)$/",
-                    "group": "inline@2"
+                    "group": "1_modify"
                 },
                 {
                     "command": "butReview.discard",
                     "when": "view == butReview.uncommitted && viewItem =~ /(File|Hunk)$/",
-                    "group": "inline@3"
+                    "group": "2_discard"
                 },
                 {
                     "command": "butReview.copyUrl",

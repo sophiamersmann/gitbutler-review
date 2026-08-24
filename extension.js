@@ -623,13 +623,10 @@ function activate(context) {
 
         vscode.commands.registerCommand(
             "butReview.openDirty",
-            async (c, line, expand) => {
-                // A collapsible row with a command runs the command rather than
-                // toggling, which left the twistie as the only way to see a
-                // file's hunks. The clicked row is the focused one, and it is
-                // still focused until the diff opens below — so ask first.
-                if (expand)
-                    await vscode.commands.executeCommand("list.expand")
+            async (c, line) => {
+                // no expanding the row: a multi-hunk file would otherwise dump
+                // its hunks into the tree every time you opened its diff, and
+                // the twistie is right there for the times you want them
                 const right =
                     c.changeType === "deleted"
                         ? uri(BASE, c.filePath, EMPTY_TREE)
@@ -661,12 +658,12 @@ function activate(context) {
                 // Absorbing the anchored files one at a time would rewrite
                 // history between calls and shift the rest, so make the user
                 // place these first and keep the real absorb one atomic call.
-                if (plan.unanchored.length)
+                if (plan.unplaced.length)
                     return vscode.window.showWarningMessage(
-                        `${plan.unanchored.length} change${plan.unanchored.length > 1 ? "s have" : " has"} no commit to absorb into.`,
+                        `${plan.unplaced.length} change${plan.unplaced.length > 1 ? "s have" : " has"} no commit to absorb into.`,
                         {
                             modal: true,
-                            detail: `Place ${plan.unanchored.length > 1 ? "them" : "it"} first with "Amend Into\u2026" on the row.\n\n${plan.unanchored
+                            detail: `Place ${plan.unplaced.length > 1 ? "them" : "it"} first with "Amend Into\u2026" on the row.\n\n${plan.unplaced
                                 .map(
                                     (r) =>
                                         `    ${r.path}  \u2192  would default to ${r.meta.branch}`
@@ -689,7 +686,7 @@ function activate(context) {
 
         // One branch's worth of absorb. `but` takes a branch as the source and
         // routes each hunk itself, so this stays one call and one oplog entry
-        // like the view-title button — and it needs no unanchored guard, since
+        // like the view-title button — and it needs no unplaced guard, since
         // a stray is by definition assigned to no branch.
         vscode.commands.registerCommand(
             "butReview.absorbBranch",

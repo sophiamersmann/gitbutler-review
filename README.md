@@ -38,7 +38,8 @@ of a file changes — absorbing an edit into a file you'd already reviewed un-ti
 
 Files are shown as a flat list or grouped by directory, chosen per branch from an icon on
 the branch row (`butReview.fileLayout` sets the default). A directory holding a single
-file stays a plain row instead of a group you have to expand.
+file stays a plain row instead of a group you have to expand, and so do files at the repo
+root — they sort above the folders rather than hiding under one called `.`.
 
 **All N branches** sits above the branches of a multi-branch stack. It's the same review,
 but of the stack as a single diff — what the target branch gets once all of it lands,
@@ -72,25 +73,37 @@ report that instead.
 ### Changes
 
 Shown only when the tree is dirty, and read top-down as the absorb plan itself: **branch →
-commit → file → hunk**. Each top-level row is a branch of yours, under it the commits your
-edits would be amended into, under those the files, and a file with more than one hunk in
-that commit expands into its hunks. Branches are listed in the same order as the Branches
-view. Clicking any row opens the diff at the first line it changes.
+file → hunk**. Each top-level row is a branch of yours and under it every file it would
+absorb, listed once. Branches are listed in the same order as the Branches view. Clicking
+a row opens the diff at the first line it changes.
+
+The branch is the level worth reading, which is why there is no commit level: the branch
+row says how many commits its edits split across, and each file row's tooltip names the
+one it lands in. A level of commit rows in between listed every file twice — once under
+the commit and once under the branch — for a mapping you rarely need.
 
 Rows carry the actions that fit them — **Absorb** to put a change where the plan says,
 **Amend Into…** to pick the commit yourself, **Discard** to throw it away. All three are
 one `but` call, and all three are one oplog entry, so `but undo` reverses any of them.
+Only Absorb is a hover button; the other two are on the right-click menu, since a
+destructive action shouldn't sit one pixel from the one you reach for every time.
 
 Each row is addressed by its GitButler CLI ID, so a hunk row acts on exactly that hunk.
-The exception is a file whose hunks lock to two different commits: it appears under both,
-each row saying `2 of 3 hunks`, and those rows act on the hunks they show rather than on
-the file — otherwise discard would take changes the row doesn't list.
+The exception is a file whose hunks lock to two different commits: it gets a row per
+commit, each saying `2 of 3 hunks`, and those rows act on the hunks they show rather than
+on the file — otherwise discard would take changes the row doesn't list.
 
-Edits that no commit depends on go in an **Unanchored** section at the bottom, with their
-files directly under it — they have no branch, which is the whole point of the section. Left alone
-they'd be filed under an arbitrary branch, so the view's absorb button is hidden while any
-exist — it could only refuse — and they're placed explicitly with **Amend Into…**. With
-only one branch applied there's nowhere else they could go, so the section doesn't appear.
+A file with more than one hunk expands into them, but only when you click the twistie —
+clicking the row itself opens the diff and leaves the tree alone. The hunk rows exist for
+acting on part of a file, which nothing else in VSCode can do; for reading, the pane the
+row opens shows the same hunks and F7 walks them.
+
+Edits that no commit depends on go in an **Unplaced** section at the bottom, with their
+files directly under it — they have no branch, which is the whole point of the section.
+Left alone they'd be filed under an arbitrary branch, so absorbing the view refuses while
+any exist, listing them and pointing at **Amend Into…** — a button that explains itself
+beats one that quietly isn't there. With only one branch applied there's nowhere else they
+could go, so the section doesn't appear.
 
 ### Pull Requests
 
