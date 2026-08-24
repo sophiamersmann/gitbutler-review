@@ -4,7 +4,7 @@
 const vscode = require("vscode")
 const path = require("path")
 const { ago, uri } = require("./exec")
-const { ciState, humanDecision, hunkLine, hunkRange, isDemoted, layoutFor, lineRange, openThreads, reviewKey, rollup, stackName } = require("./model")
+const { allReviewed, ciState, entriesIn, folderKey, humanDecision, hunkLine, hunkRange, isDemoted, layoutFor, lineRange, openThreads, reviewOf, rollup, stackName } = require("./model")
 
 const BASE = "butbase" // butbase:/<path>?<ref>    — the file as of a ref, read-only
 
@@ -285,33 +285,53 @@ function wholeStackItem(ws, stack, files, overrides) {
             .join("  \n")
     )
     // the same contextValue shape as a branch, so the layout toggle applies here
-    // too — 88 files flat is exactly when grouping earns its keep
+    // too — 88 files flat is exactly when the tree earns its keep
     item.contextValue = `branch:${layoutFor(ws, overrides)}`
     item.branch = ws
     return item
 }
 
-function groupItem(group) {
-    const parent = path.dirname(group.dir)
+/** Expanded, because a branch's files were all on screen the moment you opened
+ *  it and a tree that hid them behind clicks would cost more than the folders
+ *  are worth. The `id` is what makes a collapse of your own stick: without one
+ *  VSCode re-applies the state above on every repaint and the row springs back
+ *  open. No parent path in the description — position says that now.
+ *
+ *  The tick holds no state of its own: it carries the review of every file
+ *  beneath it, so one click writes them all, and it reads ticked only while all
+ *  of them do. Which is what unticks it when you edit one of them. */
+function folderItem(node, branch, reviewed) {
     const item = new vscode.TreeItem(
-        path.basename(group.dir) || group.dir,
-        vscode.TreeItemCollapsibleState.Collapsed
+        node.label,
+        vscode.TreeItemCollapsibleState.Expanded
     )
-    item.description = [
-        parent === "." ? "" : parent,
-        `${group.files.length} file${group.files.length === 1 ? "" : "s"}`,
-    ]
-        .filter(Boolean)
-        .join("  ·  ")
-    item.tooltip = group.dir
+    item.id = folderKey(branch, node.dir)
+    item.review = entriesIn(node).map(reviewOf)
+    item.checkboxState = allReviewed(item.review, reviewed)
+        ? vscode.TreeItemCheckboxState.Checked
+        : vscode.TreeItemCheckboxState.Unchecked
+    // a checkbox has no third state, so 6 of 7 ticked looks exactly like none
+    // of them — and a collapsed folder cannot show you the six either. The
+    // count carries what the box can't
+    const done = item.review.filter(
+        (r) => reviewed?.get(r.key) === r.blob
+    ).length
+    const files = item.review.length
+    item.description = done
+        ? `${done}/${files} reviewed`
+        : `${files} file${files === 1 ? "" : "s"}`
+    item.tooltip = node.dir
     item.iconPath = vscode.ThemeIcon.Folder
-    item.contextValue = "group"
-    item.group = group.files
+    item.contextValue = "folder"
+    // one property, and `getChildren` reads it before it reads `branch` — a row
+    // carrying a branch that fell through to the branch case would refetch the
+    // whole diff on every expand
+    item.folder = { node, branch }
     return item
 }
 
 function fileItem(entry, reviewed, showDir) {
-    const { f, branch, blob, alsoIn, within = [], committed } = entry
+    const { f, branch, alsoIn, within = [], committed } = entry
     const { above = [], other = [] } = alsoIn ?? {}
     // "!" turns the row's badge to the warning colour, which any foreign hunk
     // earns: it says the pane will hold lines that are not this branch's — which
@@ -360,12 +380,10 @@ function fileItem(entry, reviewed, showDir) {
         arguments: [branch, f, alsoIn],
     }
     item.contextValue = "file"
-    const key = reviewKey(branch, f.file, committed)
-    item.review = [{ key, blob }]
-    item.checkboxState =
-        reviewed?.get(key) === blob
-            ? vscode.TreeItemCheckboxState.Checked
-            : vscode.TreeItemCheckboxState.Unchecked
+    item.review = [reviewOf(entry)]
+    item.checkboxState = allReviewed(item.review, reviewed)
+        ? vscode.TreeItemCheckboxState.Checked
+        : vscode.TreeItemCheckboxState.Unchecked
     return item
 }
 
@@ -464,4 +482,4 @@ function churn(hunks) {
     return `+${adds} −${dels}`
 }
 
-module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, groupItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, folderItem, fileItem, prStackItem, prItem }

@@ -184,8 +184,8 @@
                 "icon": "$(list-flat)"
             },
             {
-                "command": "butReview.viewAsGroup",
-                "title": "Group by Directory",
+                "command": "butReview.viewAsTree",
+                "title": "View as Tree",
                 "category": "GitButler Review",
                 "icon": "$(list-tree)"
             },
@@ -269,7 +269,7 @@
                     "when": "false"
                 },
                 {
-                    "command": "butReview.viewAsGroup",
+                    "command": "butReview.viewAsTree",
                     "when": "false"
                 },
                 {
@@ -336,13 +336,13 @@
                     "group": "inline@2"
                 },
                 {
-                    "command": "butReview.viewAsGroup",
+                    "command": "butReview.viewAsTree",
                     "when": "view == butReview.branches && viewItem =~ /^branch:list$/",
                     "group": "inline@2"
                 },
                 {
                     "command": "butReview.viewAsList",
-                    "when": "view == butReview.branches && viewItem =~ /^branch:group$/",
+                    "when": "view == butReview.branches && viewItem =~ /^branch:tree$/",
                     "group": "inline@2"
                 },
                 {
@@ -396,12 +396,12 @@
                     "type": "string",
                     "enum": [
                         "list",
-                        "group"
+                        "tree"
                     ],
                     "default": "list",
                     "enumDescriptions": [
                         "A flat list of files",
-                        "Grouped by directory"
+                        "A folder tree, one row per directory"
                     ],
                     "markdownDescription": "Default layout for a branch's changed files. Override per branch from the branch row."
                 },

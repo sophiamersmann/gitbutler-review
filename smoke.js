@@ -670,74 +670,239 @@ console.log(
 // a file row's label is its uri, a folder row's is a plain string
 const rowLabel = (r) => (r.label?.path ? r.label.path.slice(1) : r.label)
 
-// the rows the tree actually emits in grouped mode, built the way it builds
-// them: model decides folder-or-file, items turns each into a row
-const treeRows = api
-    .groupRows(entries)
-    .map((r) =>
-        r.group ? api.groupItem(r.group) : api.fileItem(r.file, store, true)
+// the tree the view walks: model shapes it, items turns each node into a row,
+// and `rows` recurses exactly as BranchTree.getChildren does
+const walk = (node, branch, ticks, depth = 0) =>
+    api.rowsOf(node).flatMap((r) =>
+        r.folder
+            ? [
+                  {
+                      depth,
+                      item: api.folderItem(r.folder, branch, ticks),
+                      node: r.folder,
+                  },
+                  ...walk(r.folder, branch, ticks, depth + 1),
+              ]
+            : [{ depth, item: api.fileItem(r.file, ticks, false), entry: r.file }]
     )
-const folders = treeRows.filter((r) => r.group)
-const covered =
-    folders.reduce((n, r) => n + r.group.length, 0) +
-    (treeRows.length - folders.length)
+
+const tree = api.fileTree(entries)
+const walked = walk(tree, branch, new Map())
+const fileRows = walked.filter((r) => r.entry)
+const folderRows = walked.filter((r) => r.node)
 console.log(
-    `ok: ${folders.length} folders + ${treeRows.length - folders.length} plain file rows covering ${covered}/${entries.length} files; folders carry no checkbox (${folders.every((r) => r.checkboxState === undefined) ? "confirmed" : "STILL SET (bug)"})`
+    `ok: ${folderRows.length} folders over ${fileRows.length}/${entries.length} files, ${1 + Math.max(0, ...walked.map((r) => r.depth))} levels deep; every row carries a checkbox (${walked.every((r) => r.item.checkboxState !== undefined) ? "confirmed" : "SOME MISSING (bug)"})`
 )
 
-// one path-sorted run, so a promoted file sits where its directory would have
-const dirs = treeRows.map((r) =>
-    path.dirname(r.group ? r.group[0].f.file : rowLabel(r))
-)
-const unsorted = dirs.filter((d, i) => i && dirs[i - 1].localeCompare(d) > 0)
-if (unsorted.length)
-    console.log(
-        `PROBLEM  tree layout: rows out of path order at ${unsorted.join(", ")}`
+{
+    const seen = fileRows.map((r) => r.entry.f.file)
+    const ids = folderRows.map((r) => r.item.id)
+    // a folder still holding a lone directory means compaction stopped early;
+    // one holding nothing at all means a node was built and never filled
+    const uncompacted = folderRows.filter(
+        (r) => r.node.dirs.size === 1 && !r.node.files.length
     )
-if (unsorted.length) process.exitCode = 1
-console.log(`ok: tree layout — ${treeRows.length} rows in path order`)
+    const empty = folderRows.filter((r) => !api.entriesIn(r.node).length)
+    // within one directory: every folder before every file, each run sorted
+    const misordered = [tree, ...folderRows.map((r) => r.node)]
+        .filter((parent) => {
+            const kinds = api.rowsOf(parent).map((r) => (r.folder ? "d" : "f"))
+            const firstFile = kinds.indexOf("f")
+            return (
+                firstFile !== -1 &&
+                kinds.some((k, i) => k === "d" && i > firstFile)
+            )
+        })
+        .map((parent) => parent.dir || "<root>")
+    const cases = [
+        [new Set(seen).size, entries.length, "every file appears exactly once"],
+        [new Set(ids).size, ids.length, "and every folder row has its own id"],
+        [uncompacted.map((r) => r.node.dir).join(", "), "", "no directory chain left uncompacted"],
+        [empty.map((r) => r.node.dir).join(", "), "", "no folder standing over nothing"],
+        [misordered.join(", "), "", "folders before files at every level"],
+        [ids.every((i) => i.includes(branch.key ?? branch.name)), true, "ids name the branch, so two branches' folders never collide"],
+    ].filter(([got, want]) => got !== want)
+    for (const [got, want, what] of cases)
+        console.log(`PROBLEM  tree: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (cases.length) process.exitCode = 1
+    console.log(`ok: tree — ${entries.length} files under ${folderRows.length} folders, all compacted, ordered and uniquely addressed`)
+}
 
-// the repo root, synthetic because whether a live branch touches a top-level
-// file is luck, and this is the one case the rule exists for. Two of them, so
-// it isn't the singleton rule doing the work, and a sibling directory to prove
-// they promote in place rather than to the end. Path-ordered, as `git diff
-// --raw` gives them: no row sorts the files within its own run.
+// synthetic, because whether a live branch touches a top-level file or a deep
+// single-child chain is luck, and those are the two cases the shape exists for
 {
     const at = (file) => ({
         f: { file, status: "M", adds: "1", dels: "1" },
         branch,
         alsoIn: { above: [], other: [] },
     })
-    const synthetic = api
-        .groupRows([at("README.md"), at("package.json"), at("src/a.js"), at("src/b.js")])
-        .map((r) =>
-            r.group ? api.groupItem(r.group) : api.fileItem(r.file, store, true)
-        )
-    const shape = synthetic.map((r) => (r.group ? `[${r.label}]` : rowLabel(r)))
+    const shape = walk(
+        api.fileTree([
+            at("package.json"),
+            at("README.md"),
+            at("a/b/c/deep.js"),
+            at("src/one.js"),
+            at("src/two.js"),
+        ]),
+        branch
+    ).map((r) => "  ".repeat(r.depth) + (r.node ? `[${r.item.label}]` : rowLabel(r.item)))
     const cases = [
-        [shape.join(" "), "README.md package.json [src]", "root files promote in place, ahead of the folders"],
-        [synthetic.filter((r) => r.group).length, 1, "and no folder stands for the root"],
-        // "." as a description would be the same confusion in smaller print
-        [synthetic.some((r) => r.description?.split("  ·  ").includes(".")), false, "nor does a row print it as its directory"],
+        [
+            shape.join(" / "),
+            "[a/b/c] /   a/b/c/deep.js / [src] /   src/one.js /   src/two.js / package.json / README.md",
+            "chains compact to one row, root files sit below the folders",
+        ],
     ].filter(([got, want]) => got !== want)
     for (const [got, want, what] of cases)
-        console.log(`PROBLEM  repo root: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+        console.log(`PROBLEM  tree shape: ${what}\n  got  ${got}\n  want ${want}`)
     if (cases.length) process.exitCode = 1
-    console.log(`ok: repo root — ${shape.join(" ")}`)
+    console.log(`ok: tree shape —\n${shape.map((l) => "     " + l).join("\n")}`)
 }
 
-// a per-branch override beats the setting; nothing else has a say
-const a = { name: "a" }
-const b = { name: "b" }
-const dflt = [api.layoutFor(a, overrides), api.layoutFor(b, overrides)]
-overrides.set(api.layoutKey(a), "group")
-const overridden = [api.layoutFor(a, overrides), api.layoutFor(b, overrides)]
+// folder ticks. The invariant is the whole feature: a row reads ticked exactly
+// when every file beneath it is ticked at the blob it currently has. Assert that
+// over the whole tree rather than over a hand-picked row, and both halves of the
+// ask — one click ticks the subtree, one edit unticks the ancestors — are the
+// same statement checked in two store states.
+{
+    const CHECKED = 1
+    const ticks = new Map()
+    // does every row agree with the store it was built from?
+    const holds = (rows) =>
+        rows.filter((r) => {
+            const all = r.item.review.every(
+                (x) => ticks.get(x.key) === x.blob
+            )
+            return (r.item.checkboxState === CHECKED) !== all
+        })
+    // the ancestors of a file are the folder rows whose dir is a prefix of it
+    const above = (rows, file) =>
+        rows.filter((r) => r.node && file.startsWith(`${r.node.dir}/`))
+
+    const cases = []
+    const clean = walk(tree, branch, ticks)
+    cases.push([holds(clean).length, 0, "nothing ticked: no row claims otherwise"])
+
+    // the deepest folder with more than one file, which is where an ancestor
+    // chain long enough to get wrong actually exists
+    const target = clean
+        .filter((r) => r.node && r.node.files.length > 1)
+        .sort((a, b) => b.depth - a.depth)[0]
+    if (!target) {
+        console.log("ok: folder ticks — skipped, no folder holds two files")
+    } else {
+        // one click on that folder: the handler writes everything the row carries
+        for (const { key, blob } of target.item.review) ticks.set(key, blob)
+        const ticked = walk(tree, branch, ticks)
+        const under = (rows) =>
+            rows.filter(
+                (r) =>
+                    r.item.review.length &&
+                    r.item.review.every((x) =>
+                        target.item.review.some((t) => t.key === x.key)
+                    )
+            )
+        cases.push(
+            [holds(ticked).length, 0, "after the click: every row still agrees"],
+            [
+                under(ticked).every((r) => r.item.checkboxState === CHECKED),
+                true,
+                "and every row inside the folder reads ticked",
+            ],
+            [
+                new Set(target.item.review.map((x) => x.key)).size,
+                api.entriesIn(target.node).length,
+                "the folder's review is exactly its subtree, one key per file",
+            ]
+        )
+
+        // now the edit: the file's blob moves, so its stored tick no longer
+        // matches. Nothing observes the edit — the mismatch is the mechanism
+        const dirty = target.node.files[0]
+        const dirtied = api.reviewOf(dirty)
+        ticks.set(dirtied.key, `${dirtied.blob}-moved`)
+        const after = walk(tree, branch, ticks)
+        const row = after.find((r) => r.entry === dirty)
+        const sibling = after.find(
+            (r) => r.entry && r.entry !== dirty && target.node.files.includes(r.entry)
+        )
+        cases.push(
+            [holds(after).length, 0, "after the edit: every row still agrees"],
+            [row.item.checkboxState, 0, "the edited file unticks itself"],
+            [
+                above(after, dirty.f.file).every(
+                    (r) => r.item.checkboxState !== CHECKED
+                ),
+                true,
+                "and unticks every folder above it",
+            ],
+            [
+                sibling ? sibling.item.checkboxState : CHECKED,
+                CHECKED,
+                "while a sibling it did not touch stays ticked",
+            ]
+        )
+        // the box has no third state, so the count is the only thing that can
+        // say the other files are still done
+        cases.push([
+            /^\d+\/\d+ reviewed$/.test(
+                above(after, dirty.f.file).at(-1).item.description
+            ),
+            true,
+            "a part-reviewed folder says so in its description",
+        ])
+    }
+
+    const bad = cases.filter(([got, want]) => got !== want)
+    for (const [got, want, what] of bad)
+        console.log(`PROBLEM  folder ticks: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (bad.length) process.exitCode = 1
+    if (target)
+        console.log(
+            `ok: folder ticks — ${cases.length} cases over ${target.node.dir} (${target.item.review.length} files); one click ticks the subtree, one edit unticks the ${above(walk(tree, branch, ticks), target.node.files[0].f.file).length} folders above it`
+        )
+}
+
+// a tick is filed per branch and per pane, and a folder's is no different since
+// it reuses the file's own key
+{
+    const one = { f: { file: "a/b.js" }, branch: { name: "one" }, blob: "b1" }
+    const keys = [
+        one,
+        { ...one, branch: { name: "two" } },
+        { ...one, committed: true },
+        { ...one, branch: { name: "one", key: "stack:bottom" } },
+    ].map((e) => api.reviewOf(e).key)
+    if (new Set(keys).size !== keys.length) {
+        console.log(`PROBLEM  review keys: ${keys.join(" ")} are not all distinct`)
+        process.exitCode = 1
+    }
+    console.log(`ok: review keys — ${keys.length} lenses, ${new Set(keys).size} distinct keys`)
+}
+
+// a per-branch override beats the setting; nothing else has a say. `c` holds
+// what the tree layout was called before it was one — a stored override still
+// says "group", and read as-is it would draw a tree while the toggle offered to
+// switch to one
+const [a, b, c] = [{ name: "a" }, { name: "b" }, { name: "c" }]
+const dflt = [a, b, c].map((x) => api.layoutFor(x, overrides))
+overrides.set(api.layoutKey(a), "tree")
+overrides.set(api.layoutKey(c), "group")
+const overridden = [a, b, c].map((x) => api.layoutFor(x, overrides))
+if (overridden.join("/") !== "tree/list/tree") {
+    console.log(
+        `PROBLEM  layout: overrides gave ${overridden.join("/")}, want tree/list/tree`
+    )
+    process.exitCode = 1
+}
 console.log(
-    `ok: layout — default gives ${dflt.join("/")}, override gives ${overridden.join("/")}`
+    `ok: layout — default gives ${dflt.join("/")}, overrides give ${overridden.join("/")} (legacy "group" reads as tree)`
 )
 
-console.log(`\n▾ ${branch.name} — grouped`)
-for (const r of treeRows.slice(0, 8))
-    console.log(`     ${String(rowLabel(r)).padEnd(46)} ${r.description}`)
-if (treeRows.length > 8) console.log(`     … ${treeRows.length - 8} more`)
+console.log(`\n▾ ${branch.name} — as a tree`)
+for (const r of walked.slice(0, 40))
+    console.log(
+        `     ${("  ".repeat(r.depth) + (r.node ? `${r.item.label}/` : rowLabel(r.item).split("/").pop())).padEnd(46)} ${r.item.description}`
+    )
+if (walked.length > 40) console.log(`     … ${walked.length - 40} more rows`)
 })()

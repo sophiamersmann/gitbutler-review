@@ -36,10 +36,24 @@ once reviewed.
 Ticks are stored per repo and survive a reload, but clear as soon as the branch's version
 of a file changes — absorbing an edit into a file you'd already reviewed un-ticks it.
 
-Files are shown as a flat list or grouped by directory, chosen per branch from an icon on
-the branch row (`butReview.fileLayout` sets the default). A directory holding a single
-file stays a plain row instead of a group you have to expand, and so do files at the repo
-root — they sort above the folders rather than hiding under one called `.`.
+Files are shown as a flat list or as a folder tree, chosen per branch from an icon on the
+branch row (`butReview.fileLayout` sets the default). The tree nests properly, folders
+before files at each level, and files at the repo root are the last rows — the level
+they're on says where everything lives, so no row has to spell it out.
+
+Folders arrive expanded, since a branch's files were all on screen the moment you opened
+it and hiding them behind clicks would cost more than the folders are worth. A directory
+whose only child is a directory is one row, `packages/@ourworldindata/grapher/src`, the
+way VSCode's explorer compacts them: five clicks to reach a monorepo's source is a tree
+being worse than the list it replaced. Collapse what you like — each folder row is
+addressed by branch and path, so it stays collapsed across a refresh.
+
+Folders tick too, and ticking one ticks every file under it. The box holds no state of its
+own: it reads ticked exactly while all of its files do, so editing any one of them unticks
+the folder and every folder above it, for the same reason it unticks the file. A checkbox
+has no third state, so a part-reviewed folder says `4/7 reviewed` where it would otherwise
+say `7 files` — with the folder collapsed that count is the only thing that can tell you
+the other four are still done.
 
 **All N branches** sits above the branches of a multi-branch stack. It's the same review,
 but of the stack as a single diff — what the target branch gets once all of it lands,
@@ -153,7 +167,7 @@ On Linux or Windows that prepend is harmless, but you may need to adjust it if `
 | --- | --- | --- |
 | `butReview.ignoredChecks` | `[]` | CI checks to exclude from a branch's status, matched as case-insensitive substrings. Useful for a slow or flaky job you never act on. |
 | `butReview.botReviewers` | `chatgpt-codex-connector`, `github-actions`, `copilot-pull-request-reviewer` | Reviewers whose approvals and comments don't count. Logins ending in `[bot]` are always ignored; Codex has no such suffix, hence this list. |
-| `butReview.fileLayout` | `list` | `list` or `group`. Overridable per branch from the branch row. |
+| `butReview.fileLayout` | `list` | `list` or `tree`. Overridable per branch from the branch row. |
 | `butReview.demoteBranches` | `["docs"]` | Stacks whose every branch matches one of these hyphen-separated tokens sort to the bottom regardless of activity. |
 
 Six theme colours are contributed under `butReview.*` for retuning the icons, the

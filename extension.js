@@ -18,8 +18,14 @@ function activate(context) {
     }
     const tree = new BranchTree(store)
     const prs = new PrTree(store)
+    // Manual checkbox state: a folder row carries the review of every file
+    // beneath it, so one event is the whole subtree. Left to VSCode, a folder
+    // you had collapsed would tick nothing — it only propagates to children it
+    // has already fetched — and its own parent-from-children rule would be a
+    // second writer of a state the store already decides.
     const branchView = vscode.window.createTreeView("butReview.branches", {
         treeDataProvider: tree,
+        manageCheckboxStateManually: true,
     })
     const dirty = new UncommittedTree()
     const dirtyView = vscode.window.createTreeView("butReview.uncommitted", {
@@ -369,7 +375,9 @@ function activate(context) {
                             ? blob
                             : undefined
                     )
-            tree.refresh() // a folder tick changes every row beneath it
+            // the rows compute their own tick from the store, so this is what
+            // repaints a folder above the file you just ticked
+            tree.refresh()
         }),
         vscode.window.registerTreeDataProvider("butReview.prs", prs),
         dirtyView,
@@ -416,8 +424,8 @@ function activate(context) {
 
         // per branch, not global: layout is a property of how big a branch is,
         // and a title-bar button could only ever mean "all of them"
-        // smoke:registers butReview.viewAsList butReview.viewAsGroup
-        ...["list", "group"].map((mode) =>
+        // smoke:registers butReview.viewAsList butReview.viewAsTree
+        ...["list", "tree"].map((mode) =>
             vscode.commands.registerCommand(
                 `butReview.viewAs${mode[0].toUpperCase()}${mode.slice(1)}`,
                 (node) => {

@@ -4,8 +4,8 @@ const vscode = require("vscode")
 const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
-const { branchGroupItem, branchItem, dirtyFileItem, fileItem, groupItem, hunkItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
-const { byBranch, committedMode, groupRows, layoutFor, positions, splitOverlap, wholeStack } = require("./model")
+const { branchGroupItem, branchItem, dirtyFileItem, fileItem, folderItem, hunkItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
+const { byBranch, committedMode, fileTree, layoutFor, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -44,8 +44,11 @@ class BranchTree extends Tree {
         try {
             if (!node) return await this.topLevel(root)
             if (node.stack) return await this.stackChildren(root, node.stack)
-            if (node.group)
-                return node.group.map((e) => fileItem(e, this.reviewed, false))
+            // before the branch case below, which is the fallthrough: a folder
+            // row carries a branch too, and reaching that case would refetch
+            // the branch's whole diff every time you expanded a directory
+            if (node.folder)
+                return this.rows(node.folder.node, node.folder.branch)
 
             const committed = committedMode(this.reviewed)
             const [files, dirty] = await Promise.all([
@@ -81,15 +84,22 @@ class BranchTree extends Tree {
             }))
             if (layoutFor(node.branch, this.overrides) === "list")
                 return entries.map((e) => fileItem(e, this.reviewed, true))
-            return groupRows(entries).map((r) =>
-                r.group
-                    ? groupItem(r.group)
-                    : fileItem(r.file, this.reviewed, true)
-            )
+            return this.rows(fileTree(entries), node.branch)
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
         }
+    }
+
+    /** One directory's rows. The tree is built once when the branch is expanded
+     *  and every folder row carries its own node, so expanding one is free —
+     *  no `but` or `git` call is reachable from here. */
+    rows(node, branch) {
+        return rowsOf(node).map((r) =>
+            r.folder
+                ? folderItem(r.folder, branch, this.reviewed)
+                : fileItem(r.file, this.reviewed, false)
+        )
     }
 
     /** The stack's branches, top-first as `but status` and the GitButler app

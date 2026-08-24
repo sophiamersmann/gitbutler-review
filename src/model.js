@@ -1,7 +1,6 @@
 // Pure derivations: no subprocesses, no vscode. The rules about CI, reviews,
 // stack names and layout live here so they can be reasoned about in isolation.
 
-const path = require("path")
 const { cfg } = require("./exec")
 
 // One circle summarising the PR, not two independent signals: 🟢 is a surrogate
@@ -166,7 +165,28 @@ function wholeStack(stack) {
 const reviewKey = (branch, file, committed) =>
     `reviewed:${committed ? "commit:" : ""}${branch.key ?? branch.name}:${file}`
 
+/** What a tick on one entry writes: the key it is filed under and the blob it
+ *  was reviewed at. A folder row carries one of these per file beneath it, so
+ *  the two kinds of row cannot drift on how a tick is keyed — and the lens comes
+ *  off the entry, which is what keeps the committed and whole-stack panes right. */
+const reviewOf = (entry) => ({
+    key: reviewKey(entry.branch, entry.f.file, entry.committed),
+    blob: entry.blob,
+})
+
+/** A tick is pinned to the blob it was given at, so a file that has changed
+ *  since reads unticked without anything having to notice the edit. Which is
+ *  also how a folder unticks itself: one file below it is enough. */
+const allReviewed = (reviews, reviewed) =>
+    reviews.length > 0 && reviews.every((r) => reviewed?.get(r.key) === r.blob)
+
 const layoutKey = (branch) => `layout:${branch.key ?? branch.name}`
+
+// a folder row's identity, so VSCode remembers a collapse across a refresh.
+// Namespaced like the others: the whole-stack lens shows the same directories
+// as its own tip branch, and the two must not share a row
+const folderKey = (branch, dir) =>
+    `folder:${branch.key ?? branch.name}:${dir}`
 
 /** Where a stack's given name is kept. A stack has no id of its own — `cliId`
  *  is handed out afresh by every `but status` — so the name hangs off a branch,
@@ -190,35 +210,77 @@ const committedMode = (store) =>
     "commit"
 
 /** A per-branch choice, else the setting. No size heuristic: guessing was one
- *  mechanism too many next to a toggle that takes one click. */
+ *  mechanism too many next to a toggle that takes one click. "group" is what
+ *  the tree layout used to be called, and a stored override still says it —
+ *  read as-is it would render a tree while the toggle offered to switch to one. */
 function layoutFor(branch, overrides) {
-    return overrides?.get(layoutKey(branch)) ?? cfg().get("fileLayout", "list")
+    const mode =
+        overrides?.get(layoutKey(branch)) ?? cfg().get("fileLayout", "list")
+    return mode === "group" ? "tree" : mode
 }
 
-/** One row per directory, sorted by full path so siblings stay adjacent. The
- *  label is the last segment and the description carries the parent, because in
- *  a monorepo the discriminating segment sits at the end of a long shared prefix
- *  — and the panel clips from the end. */
-function groupsOf(entries) {
-    return [...Map.groupBy(entries, (e) => path.dirname(e.f.file))]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([dir, files]) => ({ dir, files }))
+/** entries -> nested directory nodes. `dirs` is keyed by segment so a path
+ *  walks straight in; `dir` is the full path, which is what identifies the row.
+ *  Chains are compacted on the way out — see `compact`. */
+function fileTree(entries) {
+    const node = (dir, label) => ({ dir, label, dirs: new Map(), files: [] })
+    const root = node("", "")
+    for (const e of entries) {
+        const segs = e.f.file.split("/")
+        let at = root
+        for (const seg of segs.slice(0, -1)) {
+            if (!at.dirs.has(seg))
+                at.dirs.set(seg, node(at.dir ? `${at.dir}/${seg}` : seg, seg))
+            at = at.dirs.get(seg)
+        }
+        at.files.push(e)
+    }
+    return compact(root)
 }
 
-/** The rows a grouped branch emits, in path order: a folder per directory,
- *  except where the folder would be worse than the files it holds. A directory
- *  of one is two rows and an expand to reach a single file, and the repo root is
- *  not a directory anyone thinks of as one — a folder called "." reads as a bug.
- *  Both promote their files in place, where the directory would have sorted, so
- *  a stray still tells you where it lives. Collected at the end instead they
- *  would read as a second list you have to search separately. */
-function groupRows(entries) {
-    return groupsOf(entries).flatMap((g) =>
-        g.dir === "." || g.files.length === 1
-            ? g.files.map((file) => ({ file }))
-            : [{ group: g }]
-    )
+/** A directory whose only child is a directory, and which holds no file of its
+ *  own, is one row reading `a/b/c` — what VSCode's explorer does with
+ *  `explorer.compactFolders`. Without it a monorepo costs five clicks to reach
+ *  source, which is a tree being worse than the list it replaced. The root is
+ *  never merged into: its children are the branch's own rows. */
+function compact(root) {
+    const merge = (n) => {
+        const label = [n.label]
+        while (n.dirs.size === 1 && !n.files.length) {
+            n = [...n.dirs.values()][0]
+            label.push(n.label)
+        }
+        return {
+            ...n,
+            label: label.join("/"),
+            dirs: new Map([...n.dirs].map(([seg, d]) => [seg, merge(d)])),
+        }
+    }
+    return {
+        ...root,
+        dirs: new Map([...root.dirs].map(([seg, d]) => [seg, merge(d)])),
+    }
 }
+
+/** A directory's rows: its sub-directories, then its own files, each in name
+ *  order — the arrangement every file manager uses, and the one a flat list
+ *  could not give. Files at the repo root are the root node's own, so they sit
+ *  below the top-level folders and need no rule of their own. */
+const rowsOf = (node) => [
+    ...[...node.dirs.values()]
+        .sort((a, b) => a.label.localeCompare(b.label))
+        .map((folder) => ({ folder })),
+    ...[...node.files]
+        .sort((a, b) => a.f.file.localeCompare(b.f.file))
+        .map((file) => ({ file })),
+]
+
+/** Every entry the subtree holds. A folder row counts these and ticks them all,
+ *  which is the whole of what a folder tick is. */
+const entriesIn = (node) => [
+    ...node.files,
+    ...[...node.dirs.values()].flatMap(entriesIn),
+]
 
 /** The absorb plan as branches rather than a flat list of commits: two commits
  *  on one branch belong together, and the branch was being repeated as every
@@ -328,4 +390,4 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { committedMode, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, layoutKey, layoutFor, byBranch, changedLines, groupRows, hunkLine, hunkRange, lineRange, nextHunk, positions, splitOverlap }
+module.exports = { committedMode, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
