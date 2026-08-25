@@ -62,9 +62,8 @@ function branchGroupItem(branch) {
             ...branch.groups.map((g) => `- ${g.commit.commit_summary}`),
         ].join("\n")
     )
-    // "no branch" is the bucket for a commit `but status` filed under none, and
-    // absorb has no branch to be handed — so that row gets no button
-    if (branch.groups[0]?.meta.branch) item.contextValue = "branchGroup"
+    // no menu hangs off this any more; it is what marks a row as a branch
+    item.contextValue = "branchGroup"
     item.id = `branch:${branch.name}`
     // every file the branch would absorb, in one list. Which commit each lands
     // in is in the row's own tooltip: the branch is what you place work by, and

@@ -124,12 +124,6 @@
                 "icon": "$(git-commit)"
             },
             {
-                "command": "butReview.absorbBranch",
-                "title": "Absorb This Branch's Changes",
-                "category": "GitButler Review",
-                "icon": "$(fold-up)"
-            },
-            {
                 "command": "butReview.absorbOne",
                 "title": "Absorb",
                 "category": "GitButler Review",
@@ -241,10 +235,6 @@
                     "when": "false"
                 },
                 {
-                    "command": "butReview.absorbBranch",
-                    "when": "false"
-                },
-                {
                     "command": "butReview.absorbOne",
                     "when": "false"
                 },
@@ -305,11 +295,6 @@
                 }
             ],
             "view/item/context": [
-                {
-                    "command": "butReview.absorbBranch",
-                    "when": "view == butReview.uncommitted && viewItem == branchGroup",
-                    "group": "inline@1"
-                },
                 {
                     "command": "butReview.absorbOne",
                     "when": "view == butReview.uncommitted && viewItem =~ /^dirty(File|Hunk)$/",

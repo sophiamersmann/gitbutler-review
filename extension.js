@@ -692,44 +692,6 @@ function activate(context) {
             }
         }),
 
-        // One branch's worth of absorb. `but` takes a branch as the source and
-        // routes each hunk itself, so this stays one call and one oplog entry
-        // like the view-title button — and it needs no unplaced guard, since
-        // a stray is by definition assigned to no branch.
-        vscode.commands.registerCommand(
-            "butReview.absorbBranch",
-            async (node) => {
-                try {
-                    const name = node.branch.name
-                    const out = await run(
-                        "but",
-                        ["absorb", "--json", name],
-                        repoRoot()
-                    )
-                    refreshAll()
-                    // what `but` says it did, not what the row said it would:
-                    // the two scope differently — the row groups a file by the
-                    // commit the plan sends it to, `but` by the branch the
-                    // change is assigned to
-                    let done = {}
-                    try {
-                        done = JSON.parse(out)
-                    } catch {
-                        // the absorb has already happened; a toast is not worth
-                        // failing over
-                    }
-                    const files = done.total_files ?? node.branch.files
-                    const commits =
-                        done.commits?.length ?? node.branch.groups.length
-                    vscode.window.showInformationMessage(
-                        `Absorbed ${files} file${files === 1 ? "" : "s"} into ${commits} commit${commits === 1 ? "" : "s"} on ${name}. \`but undo\` reverses it.`
-                    )
-                } catch (e) {
-                    vscode.window.showErrorMessage(`but-review: ${e.message}`)
-                }
-            }
-        ),
-
         // One row's worth of absorb. The row already names the commit it lands
         // in, so there is nothing to ask — and `but undo` reverses it.
         vscode.commands.registerCommand("butReview.absorbOne", async (node) => {
