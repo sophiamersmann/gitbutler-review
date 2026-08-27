@@ -193,6 +193,77 @@ function hunkItem(row, i, unplaced) {
     return item
 }
 
+/** Collapsed, and one row whatever the branch holds: commits are the other way
+ *  to read a diff you came here to read by file, so they cost the file list one
+ *  line and nothing more until you ask. An icon rather than none, because in
+ *  tree layout this row's siblings are directories. */
+function commitsGroupItem(branch) {
+    const n = branch.commits.length
+    const item = new vscode.TreeItem(
+        `${n} commit${n === 1 ? "" : "s"}`,
+        vscode.TreeItemCollapsibleState.Collapsed
+    )
+    item.id = `commits:${branch.key ?? branch.name}`
+    item.iconPath = new vscode.ThemeIcon(
+        "git-commit",
+        new vscode.ThemeColor("butReview.branchIcon")
+    )
+    item.tooltip = new vscode.MarkdownString(
+        [
+            `**${branch.name}** — ${n} commits`,
+            "",
+            "Each one opens its own diff, against the commit below it. Ticks there are counted apart from this branch's: a commit's slice of a file is not the branch's diff of it.",
+        ].join("\n")
+    )
+    item.contextValue = "commits"
+    item.commitsOf = branch
+    return item
+}
+
+/** One commit, expanding to the files it changed. The subject carries its own
+ *  gitmoji, so the icon says only whether the commit is in trouble. */
+function commitItem(commit, branch) {
+    const item = new vscode.TreeItem(
+        commit.subject,
+        vscode.TreeItemCollapsibleState.Collapsed
+    )
+    item.id = `commit:${commit.changeId}`
+    item.description = [
+        commit.conflicted
+            ? "⚠ conflicted"
+            : commit.files === undefined
+              ? ""
+              : `${commit.files} file${commit.files === 1 ? "" : "s"}`,
+        commit.createdAt && ago(commit.createdAt),
+    ]
+        .filter(Boolean)
+        .join("  ·  ")
+    item.iconPath = new vscode.ThemeIcon(
+        commit.conflicted ? "warning" : "git-commit",
+        new vscode.ThemeColor(
+            commit.conflicted
+                ? "problemsWarningIcon.foreground"
+                : "butReview.branchIcon"
+        )
+    )
+    item.tooltip = new vscode.MarkdownString(
+        [
+            `**${commit.subject}**`,
+            commit.body,
+            "",
+            `\`${commit.sha.slice(0, 7)}\` on \`${branch.name}\``,
+            commit.conflicted
+                ? "⚠️ Conflicted — its diff shows the conflict as it was committed."
+                : "",
+        ]
+            .filter(Boolean)
+            .join("  \n")
+    )
+    item.contextValue = "commit"
+    item.commit = { commit, branch }
+    return item
+}
+
 function stackItem(stack) {
     const item = new vscode.TreeItem(
         stackName(stack),
@@ -481,4 +552,4 @@ function churn(hunks) {
     return `+${adds} −${dels}`
 }
 
-module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, folderItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }

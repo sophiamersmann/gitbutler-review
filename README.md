@@ -55,6 +55,16 @@ has no third state, so a part-reviewed folder says `4/7 reviewed` where it would
 say `7 files` — with the folder collapsed that count is the only thing that can tell you
 the other four are still done.
 
+**N commits** is the first row under a branch that holds more than one, folded away until
+you ask. Expanding it lists the branch's commits newest first; expanding one of those shows
+the files that commit changed, as a list or a tree exactly as the branch shows its own —
+the layout toggle stays on the branch row and governs both. A commit's diff runs against
+the commit below it, so it holds nothing from any other branch and nothing uncommitted,
+and its ticks are counted apart from the branch's: one commit's slice of a file isn't the
+branch's diff of it. Rows are keyed on GitButler's change ID rather than the SHA, so a
+reword or a rebase leaves your ticks and your open rows where they were. A branch of one
+commit grows no row, because that commit's files are the branch's files.
+
 **All N branches** sits above the branches of a multi-branch stack. It's the same review,
 but of the stack as a single diff — what the target branch gets once all of it lands,
 which per-branch review doesn't show. A helper added in one branch and called three above

@@ -216,6 +216,77 @@ for (const s of stacks) {
 }
 console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
 
+// Commits under a branch, through the provider rather than the builders: the
+// row order and the one-commit rule live in getChildren, and neither is visible
+// from an item on its own.
+{
+    const { BranchTree } = require("./src/trees")
+    const memory = new Map()
+    const tree = new BranchTree({
+        get: (k) => memory.get(k),
+        set: (k, v) => memory.set(k, v),
+    })
+    // what topLevel attaches, which the rows below read
+    await tree.getChildren()
+    const all = stacks.flatMap((s) => s.branches)
+    const many = all.find((b) => b.commits.length > 1)
+    const one = all.find((b) => b.commits.length === 1)
+    const bad = []
+    if (!many) {
+        console.log("ok: commits — skipped, no branch here holds two")
+    } else {
+        const rows = await tree.getChildren({ branch: many })
+        const group = rows[0]
+        if (!group?.commitsOf)
+            bad.push("the commits row is not the first row under a branch")
+        if (rows.slice(1).some((r) => r.commitsOf))
+            bad.push("more than one commits row")
+        if (group?.label !== `${many.commits.length} commits`)
+            bad.push(`the row says ${JSON.stringify(group?.label)}`)
+
+        const commits = await tree.getChildren(group)
+        if (commits.length !== many.commits.length)
+            bad.push(`${commits.length} commit rows for ${many.commits.length} commits`)
+        const ids = new Set(commits.map((c) => c.id))
+        if (ids.size !== commits.length) bad.push("commit rows share an id")
+        if (!commits.every((c, i) => c.id === `commit:${many.commits[i].changeId}`))
+            bad.push("a commit row is not keyed on its changeId")
+        if (!commits.some((c) => /\d+ files?/.test(c.description ?? "")))
+            bad.push("no commit row carries a file count")
+
+        const files = await tree.getChildren(commits[0])
+        if (!files.length) bad.push("the newest commit shows no files")
+        // the same file read as the branch's diff and as one commit's are two
+        // reviews, so a tick on one must not read as a tick on the other
+        const mine = new Set(rows.slice(1).flatMap((r) => (r.review ?? []).map((x) => x.key)))
+        if (files.some((f) => (f.review ?? []).some((x) => mine.has(x.key))))
+            bad.push("a commit's file shares its review key with the branch's")
+        if (!files.every((f) => (f.review ?? []).every((x) => x.key.includes("commit:"))))
+            bad.push("a commit's file is not keyed as a commit's")
+
+        // the layout is the branch's, not the commit's: one toggle, and the
+        // folders under a commit are still its own rows
+        memory.set(api.layoutKey(many), "tree")
+        const folders = await tree.getChildren(commits[0])
+        if (!folders.some((f) => f.folder))
+            bad.push("a commit ignores its branch's tree layout")
+        if (folders.some((f) => f.id && !f.id.includes("commit:")))
+            bad.push("a folder under a commit shares the branch's row id")
+        memory.delete(api.layoutKey(many))
+
+        if (one) {
+            const solo = await tree.getChildren({ branch: one })
+            if (solo.some((r) => r.commitsOf))
+                bad.push("a one-commit branch still grew a commits row")
+        }
+        for (const b of bad) console.log(`PROBLEM  commits: ${b}`)
+        if (bad.length) process.exitCode = 1
+        else
+            console.log(
+                `ok: commits — ${commits.length} rows under \`${many.name}\`, ${files.length} files in its newest, ticks namespaced apart from the branch's${one ? "; a one-commit branch grows no row" : ""}`
+            )
+    }
+}
 
 // What a stack is called, which is a vote and so has ties and outliers
 {

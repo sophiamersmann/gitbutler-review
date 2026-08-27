@@ -525,8 +525,10 @@ function activate(context) {
                 const root = repoRoot()
                 const live = vscode.Uri.file(path.join(root, f.file))
                 // "Open Working File" asks for the editable pane whatever the
-                // mode says
-                const onCommit = !opts.workspace && committedMode(store)
+                // mode says — except over a commit, which has no workspace side
+                // to ask for: its diff ends at the commit below it
+                const onCommit =
+                    branch.committed || (!opts.workspace && committedMode(store))
                 // a deleted file has no workspace side; show it against nothing
                 const right =
                     f.status === "D"
@@ -539,7 +541,10 @@ function activate(context) {
                 // Nothing to mark in a committed pane: it is this branch's diff
                 // and nobody else's, which is the point of it. With no entry the
                 // dimming, the names and F7 all stay off by themselves.
-                if (onCommit && f.status !== "D")
+                // not for a commit: the button offers the branch's own diff
+                // against the worktree, which over one commit of several would
+                // be neither what the row said nor what the branch says
+                if (onCommit && !branch.committed && f.status !== "D")
                     committedPanes.set(
                         paneKey(left.toString(), right.toString()),
                         { branch, f, alsoIn }

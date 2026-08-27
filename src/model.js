@@ -159,6 +159,20 @@ function wholeStack(stack) {
     }
 }
 
+/** One commit as a branch-shaped lens: `base..name` is its own diff, which is
+ *  what every file row, tree and tick below it is built from. It carries no
+ *  layout of its own — `layoutFor` is asked about the branch, so one toggle
+ *  governs the files under a branch and the files under its commits alike. */
+const commitLens = (commit) => ({
+    name: commit.sha,
+    base: commit.base,
+    label: commit.subject,
+    // `changeId`, because a reword or a rebase gives the same change a new SHA,
+    // and a key on the SHA would drop the row's ticks and its open state
+    key: `commit:${commit.changeId}`,
+    committed: true,
+})
+
 // `key` is the whole-stack lens asking not to be confused with its own tip; the
 // committed lens is a different pane over the same file, so its ticks are its
 // own too — otherwise ticking in one mode would overwrite the other's
@@ -390,4 +404,4 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { committedMode, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
+module.exports = { commitLens, committedMode, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }

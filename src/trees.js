@@ -4,8 +4,8 @@ const vscode = require("vscode")
 const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
-const { branchGroupItem, branchItem, dirtyFileItem, fileItem, folderItem, hunkItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
-const { byBranch, committedMode, fileTree, layoutFor, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
+const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, fileItem, folderItem, hunkItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
+const { byBranch, commitLens, committedMode, fileTree, layoutFor, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -49,46 +49,73 @@ class BranchTree extends Tree {
             // the branch's whole diff every time you expanded a directory
             if (node.folder)
                 return this.rows(node.folder.node, node.folder.branch)
+            if (node.commitsOf)
+                return node.commitsOf.commits.map((c) =>
+                    commitItem(c, node.commitsOf)
+                )
+            if (node.commit)
+                return await this.filesOf(
+                    root,
+                    commitLens(node.commit.commit),
+                    node.commit.branch
+                )
 
-            const committed = committedMode(this.reviewed)
-            const [files, dirty] = await Promise.all([
-                changedFiles(root, node.branch, committed),
-                contaminated(root, node.branch),
-            ])
-            const entries = files.map((f) => ({
-                f,
-                branch: node.branch,
-                blob: f.blob,
-                // the row's tick and its warnings both belong to the pane the
-                // row opens, and there are two of those
-                committed,
-                // whole-stack lens only: which of the stack's own branches build
-                // this file. Not gated on `dirty` — a file assembled in steps is
-                // worth flagging whether or not anyone else touches it too
-                within: (node.branch.members ?? []).filter((n) =>
-                    this.overlap?.get(f.file)?.includes(n)
-                ),
-                // names come from the overlap map, but only for files that
-                // actually carry someone else's hunks — and split, because a
-                // branch above in your own stack is not the same news as one
-                // in a stack of its own
-                alsoIn: splitOverlap(
-                    node.branch,
-                    dirty.has(f.file)
-                        ? (this.overlap?.get(f.file) ?? []).filter(
-                              (n) => n !== node.branch.name
-                          )
-                        : [],
-                    this.where ?? new Map()
-                ),
-            }))
-            if (layoutFor(node.branch, this.overrides) === "list")
-                return entries.map((e) => fileItem(e, this.reviewed, true))
-            return this.rows(fileTree(entries), node.branch)
+            const rows = await this.filesOf(root, node.branch, node.branch)
+            // above the files, because it is the same diff read the other way
+            // and a row that moves with the file count is a row you hunt for. A
+            // branch of one commit is that commit, so the row would lead to the
+            // list it already sits on.
+            return node.branch.commits?.length > 1
+                ? [commitsGroupItem(node.branch), ...rows]
+                : rows
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
         }
+    }
+
+    /** The rows for one diff. `lens` is what the diff is taken over — a branch,
+     *  the whole stack, or a single commit; `layoutBranch` is who the list/tree
+     *  toggle belongs to, which for a commit is the branch it hangs under. */
+    async filesOf(root, lens, layoutBranch) {
+        // a commit is only ever read as it was committed, whatever the view's
+        // own toggle says: there is no workspace side to a diff between two
+        // commits, and nothing in it belongs to anyone else
+        const committed = lens.committed || committedMode(this.reviewed)
+        const [files, dirty] = await Promise.all([
+            changedFiles(root, lens, committed),
+            lens.committed ? new Set() : contaminated(root, lens),
+        ])
+        const entries = files.map((f) => ({
+            f,
+            branch: lens,
+            blob: f.blob,
+            // the row's tick and its warnings both belong to the pane the
+            // row opens, and there are two of those
+            committed,
+            // whole-stack lens only: which of the stack's own branches build
+            // this file. Not gated on `dirty` — a file assembled in steps is
+            // worth flagging whether or not anyone else touches it too
+            within: (lens.members ?? []).filter((n) =>
+                this.overlap?.get(f.file)?.includes(n)
+            ),
+            // names come from the overlap map, but only for files that
+            // actually carry someone else's hunks — and split, because a
+            // branch above in your own stack is not the same news as one
+            // in a stack of its own
+            alsoIn: splitOverlap(
+                lens,
+                dirty.has(f.file)
+                    ? (this.overlap?.get(f.file) ?? []).filter(
+                          (n) => n !== lens.name
+                      )
+                    : [],
+                this.where ?? new Map()
+            ),
+        }))
+        if (layoutFor(layoutBranch, this.overrides) === "list")
+            return entries.map((e) => fileItem(e, this.reviewed, true))
+        return this.rows(fileTree(entries), lens)
     }
 
     /** One directory's rows. The tree is built once when the branch is expanded
