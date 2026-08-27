@@ -168,7 +168,7 @@ On Linux or Windows that prepend is harmless, but you may need to adjust it if `
 | `butReview.ignoredChecks` | `[]` | CI checks to exclude from a branch's status, matched as case-insensitive substrings. Useful for a slow or flaky job you never act on. |
 | `butReview.botReviewers` | `chatgpt-codex-connector`, `github-actions`, `copilot-pull-request-reviewer` | Reviewers whose approvals and comments don't count. Logins ending in `[bot]` are always ignored; Codex has no such suffix, hence this list. |
 | `butReview.fileLayout` | `list` | `list` or `tree`. Overridable per branch from the branch row. |
-| `butReview.demoteBranches` | `["docs"]` | Stacks whose every branch matches one of these hyphen-separated tokens sort to the bottom regardless of activity. |
+| `butReview.demoteBranches` | `["docs", "debug"]` | Stacks whose every branch matches one of these hyphen-separated tokens sort to the bottom regardless of activity. |
 
 Six theme colours are contributed under `butReview.*` for retuning the icons, the
 dimming, and the ruler mark.

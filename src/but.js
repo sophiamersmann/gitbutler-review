@@ -37,7 +37,8 @@ function stacksOf(st, overrides) {
             // stamped once here rather than threaded through the four rows that
             // name a stack, the way a branch already carries its own `label`
             label: stackLabel(stack, overrides),
-            // a stack of nothing but docs is never the thing you came here for
+            // a stack of nothing but docs or debugging is never the thing you
+            // came here for
             demoted: stack.branches.every((b) => isDemoted(b.name)),
             activity: stack.branches
                 .flatMap((b) => b.commits.map((c) => c.createdAt))

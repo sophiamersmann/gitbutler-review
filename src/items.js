@@ -231,8 +231,8 @@ function branchItem(branch, overrides) {
     )
     // no CI on this row or in its tooltip: a check's state belongs to the PR, and
     // the Pull Requests view already rolls it into that row's circle
-    // a docs branch is always freshly touched and never the thing you act on, so
-    // its age is noise
+    // a demoted branch is always freshly touched and never the thing you act on,
+    // so its age is noise
     item.description =
         (!isDemoted(branch.name) && branch.latest && ago(branch.latest)) || ""
     item.iconPath = new vscode.ThemeIcon(

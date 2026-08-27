@@ -373,7 +373,8 @@
                         "type": "string"
                     },
                     "default": [
-                        "docs"
+                        "docs",
+                        "debug"
                     ],
                     "markdownDescription": "Stacks whose every branch name contains one of these hyphen-separated tokens are sorted to the bottom, whatever their activity. Token match, so `docs` catches `my-docs` but not `docstring-fix`."
                 },

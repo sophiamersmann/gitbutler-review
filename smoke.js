@@ -87,7 +87,7 @@ const stub = {
                 ({
                     ignoredChecks: [],
                     botReviewers: ["chatgpt-codex-connector", "github-actions"],
-                    demoteBranches: ["docs"],
+                    demoteBranches: ["docs", "debug"],
                 })[k] ?? d,
         }),
     },
