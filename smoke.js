@@ -187,7 +187,9 @@ const api = {
 
 const root = process.cwd()
 const st = JSON.parse(
-    execFileSync("but", ["status", "--json"], { maxBuffer: 1e8 })
+    // -f, as the extension asks for it: the file counts on commit rows come
+    // from it and nothing else does
+    execFileSync("but", ["status", "-f", "--json"], { maxBuffer: 1e8 })
 )
 const stacks = api.stacksOf(st)
 const overrides = new Map()
@@ -214,12 +216,15 @@ for (const s of stacks) {
 }
 console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
 
+
 // What a stack is called, which is a vote and so has ties and outliers
 {
     const of = (...topics) => ({
         branches: topics.map((t, i) => ({
             name: `b${i}`,
-            subjects: t.map((x) => `🔨🤖 ${x ? `(${x}) ` : ""}did a thing`),
+            commits: t.map((x) => ({
+                subject: `🔨🤖 ${x ? `(${x}) ` : ""}did a thing`,
+            })),
         })),
     })
     const cases = [

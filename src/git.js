@@ -256,7 +256,7 @@ async function hunkOwners(root, branches, file) {
     }))
     return kept.map((c) => {
         const owner = branches.find((b) => b.name === c.name)
-        const own = new Set(owner?.commits ?? [])
+        const own = new Set((owner?.commits ?? []).map((c) => c.sha))
         const shas = new Set()
         for (let l = c.range.start.line; l <= c.range.end.line; l++)
             if (own.has(byLine.get(l))) shas.add(byLine.get(l))
@@ -264,7 +264,8 @@ async function hunkOwners(root, branches, file) {
         // a branch holding one commit needs no blame to be sure which it was,
         // which is the case blame cannot answer anyway: a hunk that is only a
         // deletion
-        const only = owner?.subjects?.length === 1 ? owner.subjects[0] : undefined
+        const only =
+            owner?.commits?.length === 1 ? owner.commits[0].subject : undefined
         return {
             ...c,
             commit:

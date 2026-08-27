@@ -13,7 +13,7 @@ function status(root) {
     if (Date.now() - statusCache.at > 2000)
         statusCache = {
             at: Date.now(),
-            value: run("but", ["status", "--json"], root).then(JSON.parse),
+            value: run("but", ["status", "-f", "--json"], root).then(JSON.parse),
         }
     return statusCache.value
 }
@@ -44,19 +44,34 @@ function stacksOf(st, overrides) {
                 .flatMap((b) => b.commits.map((c) => c.createdAt))
                 .sort()
                 .pop(),
-            branches: stack.branches.map((b, i) => ({
-                name: b.name,
-                base: stack.branches[i + 1]?.name ?? st.mergeBase.commitId,
-                pr: b.reviewId?.replace(/[()]/g, ""),
-                passing: b.ci?.passingCheckTitles ?? [],
-                pending: b.ci?.pendingCheckTitles ?? [],
-                failing: b.ci?.failingCheckTitles ?? [],
-                subjects: b.commits.map((c) => c.message.split("\n")[0]),
-                // positional with `subjects`, and what blame has to match to
-                // name the commit behind a hunk
-                commits: b.commits.map((c) => c.commitId),
-                latest: b.commits[0]?.createdAt,
-            })),
+            branches: stack.branches.map((b, i) => {
+                const base = stack.branches[i + 1]?.name ?? st.mergeBase.commitId
+                return {
+                    name: b.name,
+                    base,
+                    pr: b.reviewId?.replace(/[()]/g, ""),
+                    passing: b.ci?.passingCheckTitles ?? [],
+                    pending: b.ci?.pendingCheckTitles ?? [],
+                    failing: b.ci?.failingCheckTitles ?? [],
+                    commits: b.commits.map((c, j) => ({
+                        // what a row is keyed on: a reword or a rebase writes a
+                        // new SHA over the same change, and `changeId` is what
+                        // survives both
+                        changeId: c.changeId,
+                        // what blame has to match to name the commit behind a hunk
+                        sha: c.commitId,
+                        // the commit below it, or the branch's own base for the
+                        // oldest — the same pairing the branches themselves get
+                        base: b.commits[j + 1]?.commitId ?? base,
+                        subject: c.message.split("\n")[0],
+                        body: c.message.split("\n").slice(1).join("\n").trim(),
+                        createdAt: c.createdAt,
+                        conflicted: c.conflicted,
+                        files: c.changes?.length,
+                    })),
+                    latest: b.commits[0]?.createdAt,
+                }
+            }),
         }))
         .sort(
             (a, b) =>

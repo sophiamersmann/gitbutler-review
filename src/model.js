@@ -104,8 +104,8 @@ function stackName(stack) {
     const topics = new Map()
     for (const b of stack.branches) {
         const mine = new Map()
-        for (const s of b.subjects) {
-            const topic = /^\S+\s*\(([^)]+)\)/.exec(s)?.[1]
+        for (const { subject } of b.commits) {
+            const topic = /^\S+\s*\(([^)]+)\)/.exec(subject)?.[1]
             if (topic) mine.set(topic, (mine.get(topic) ?? 0) + 1)
         }
         // a branch whose own commits disagree still gets the one vote, cast for

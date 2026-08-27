@@ -247,7 +247,7 @@ function branchItem(branch, overrides) {
                 : `${branch.fileCount} file${branch.fileCount === 1 ? "" : "s"} changed`,
             `Compared against \`${branch.base}\``,
             "",
-            ...branch.subjects.map((s) => `- ${s}`),
+            ...(branch.commits ?? []).map((c) => `- ${c.subject}`),
         ]
             .filter(Boolean)
             .join("\n")
