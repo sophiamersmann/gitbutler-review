@@ -274,6 +274,38 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
             bad.push("a folder under a commit shares the branch's row id")
         memory.delete(api.layoutKey(many))
 
+        // One commit open at a time, and the row that has to come back shut
+        // comes back under an id VSCode has never seen — the only way to
+        // collapse a row it is already restoring as open
+        if (commits.length > 1) {
+            const [a, b] = many.commits
+            const idsWhen = async (...opens) => {
+                for (const [c, open] of opens)
+                    tree.openOneCommit(many, c, open)
+                return (await tree.getChildren(group)).map((r) => [
+                    r.id,
+                    r.collapsibleState,
+                ])
+            }
+            const first = await idsWhen([a, true])
+            const second = await idsWhen([b, true])
+            if (first[0][1] !== 2 || second[1][1] !== 2)
+                bad.push("the commit the reader opened did not come back open")
+            if (second[0][1] !== 1)
+                bad.push("opening a second commit left the first open")
+            if (second[0][0] === first[0][0])
+                bad.push("the closed commit kept its id, which VSCode would restore as open")
+            // a commit the reader closed themselves is already shut as far as
+            // VSCode is concerned, so reopening the other must not churn its id
+            const third = await idsWhen([b, false], [a, true])
+            if (third[0][1] !== 2) bad.push("reopening the first commit left it shut")
+            if (third[1][0] !== second[1][0])
+                bad.push("a commit the reader closed was handed a new id anyway")
+            tree.openOneCommit(many, a, false)
+            if (tree.openCommit.size)
+                bad.push("closing the open commit left the branch reading as commits")
+        }
+
         if (one) {
             const solo = await tree.getChildren({ branch: one })
             if (solo.some((r) => r.commitsOf))
@@ -283,7 +315,7 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
         if (bad.length) process.exitCode = 1
         else
             console.log(
-                `ok: commits — ${commits.length} rows under \`${many.name}\`, ${files.length} files in its newest, ticks namespaced apart from the branch's${one ? "; a one-commit branch grows no row" : ""}`
+                `ok: commits — ${commits.length} rows under \`${many.name}\`, ${files.length} files in its newest, ticks namespaced apart from the branch's, one open at a time${one ? "; a one-commit branch grows no row" : ""}`
             )
     }
 }

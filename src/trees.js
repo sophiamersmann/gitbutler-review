@@ -5,7 +5,7 @@ const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
 const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, fileItem, folderItem, hunkItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
-const { byBranch, commitLens, committedMode, fileTree, layoutFor, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
+const { byBranch, commitLens, commitsKey, committedMode, fileTree, layoutFor, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -30,12 +30,41 @@ class BranchTree extends Tree {
         // one workspaceState-backed store, two key namespaces
         this.reviewed = store
         this.overrides = store
+        // the one commit open under each branch, and how many times each commit
+        // row has been closed to make room for another. Not in the store: both
+        // describe rows on screen, and a stored one would outlive them
+        this.openCommit = new Map()
+        this.shut = new Map()
+        // the commits row a branch's commits hang off, so shutting one of them
+        // repaints that row alone
+        this.rowFor = new Map()
     }
 
     refresh() {
         this.overlap = undefined // recomputed on next expand
         this.where = undefined
+        this.rowFor.clear()
         super.refresh()
+    }
+
+    /** One commit open at a time under a branch: expanding a second closes the
+     *  first, so a branch's files are never split across two commits on screen.
+     *  Does nothing when the row is already in that state — VSCode re-reports
+     *  a row it has just repainted, and repainting on the way back in would
+     *  never settle. */
+    openOneCommit(branch, commit, open) {
+        const key = commitsKey(branch)
+        const was = this.openCommit.get(key)
+        if (open === (was === commit.changeId)) return
+        if (!open) return void this.openCommit.delete(key)
+
+        this.openCommit.set(key, commit.changeId)
+        // only the row being closed needs a repaint, and only to be handed a
+        // new id: the one the reader just opened is already open
+        if (was) {
+            this.shut.set(was, (this.shut.get(was) ?? 0) + 1)
+            this.changed.fire(this.rowFor.get(key))
+        }
     }
 
     async getChildren(node) {
@@ -49,10 +78,17 @@ class BranchTree extends Tree {
             // the branch's whole diff every time you expanded a directory
             if (node.folder)
                 return this.rows(node.folder.node, node.folder.branch)
-            if (node.commitsOf)
+            if (node.commitsOf) {
+                const open = this.openCommit.get(commitsKey(node.commitsOf))
                 return node.commitsOf.commits.map((c) =>
-                    commitItem(c, node.commitsOf)
+                    commitItem(
+                        c,
+                        node.commitsOf,
+                        c.changeId === open,
+                        this.shut.get(c.changeId)
+                    )
                 )
+            }
             if (node.commit)
                 return await this.filesOf(
                     root,
@@ -65,9 +101,10 @@ class BranchTree extends Tree {
             // and a row that moves with the file count is a row you hunt for. A
             // branch of one commit is that commit, so the row would lead to the
             // list it already sits on.
-            return node.branch.commits?.length > 1
-                ? [commitsGroupItem(node.branch), ...rows]
-                : rows
+            if (!(node.branch.commits?.length > 1)) return rows
+            const group = commitsGroupItem(node.branch)
+            this.rowFor.set(group.id, group)
+            return [group, ...rows]
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []

@@ -27,6 +27,18 @@ function activate(context) {
         treeDataProvider: tree,
         manageCheckboxStateManually: true,
     })
+    // Expansion is VSCode's state, not the tree's, so the accordion under a
+    // commits row — one commit open at a time — only works if the view says
+    // when one opens.
+    const commitToggled = (element, open) => {
+        if (element.commit)
+            tree.openOneCommit(element.commit.branch, element.commit.commit, open)
+    }
+    context.subscriptions.push(
+        branchView.onDidExpandElement((e) => commitToggled(e.element, true)),
+        branchView.onDidCollapseElement((e) => commitToggled(e.element, false))
+    )
+
     const dirty = new UncommittedTree()
     const dirtyView = vscode.window.createTreeView("butReview.uncommitted", {
         treeDataProvider: dirty,

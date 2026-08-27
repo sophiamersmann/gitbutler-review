@@ -4,7 +4,7 @@
 const vscode = require("vscode")
 const path = require("path")
 const { ago, uri } = require("./exec")
-const { allReviewed, ciState, entriesIn, folderKey, humanDecision, hunkLine, hunkRange, isDemoted, layoutFor, lineRange, openThreads, reviewOf, rollup, stackName } = require("./model")
+const { allReviewed, ciState, commitsKey, entriesIn, folderKey, humanDecision, hunkLine, hunkRange, isDemoted, layoutFor, lineRange, openThreads, reviewOf, rollup, stackName } = require("./model")
 
 const BASE = "butbase" // butbase:/<path>?<ref>    — the file as of a ref, read-only
 
@@ -203,7 +203,7 @@ function commitsGroupItem(branch) {
         `${n} commit${n === 1 ? "" : "s"}`,
         vscode.TreeItemCollapsibleState.Collapsed
     )
-    item.id = `commits:${branch.key ?? branch.name}`
+    item.id = commitsKey(branch)
     item.iconPath = new vscode.ThemeIcon(
         "git-commit",
         new vscode.ThemeColor("butReview.branchIcon")
@@ -212,7 +212,7 @@ function commitsGroupItem(branch) {
         [
             `**${branch.name}** — ${n} commits`,
             "",
-            "Each one opens its own diff, against the commit below it. Ticks there are counted apart from this branch's: a commit's slice of a file is not the branch's diff of it.",
+            "Each one opens its own diff, against the commit below it, and one at a time — opening a second closes the first. Ticks there are counted apart from this branch's: a commit's slice of a file is not the branch's diff of it.",
         ].join("\n")
     )
     item.contextValue = "commits"
@@ -221,13 +221,21 @@ function commitsGroupItem(branch) {
 }
 
 /** One commit, expanding to the files it changed. The subject carries its own
- *  gitmoji, so the icon says only whether the commit is in trouble. */
-function commitItem(commit, branch) {
+ *  gitmoji, so the icon says only whether the commit is in trouble.
+ *
+ *  `shut` counts the times this row has been closed to make room for another.
+ *  VSCode restores a row's expansion from its id and offers no way to collapse
+ *  one (microsoft/vscode#40179), so a row that has to come back shut comes back
+ *  under an id VSCode has never seen — which is the whole of what the count is
+ *  for. */
+function commitItem(commit, branch, open, shut = 0) {
     const item = new vscode.TreeItem(
         commit.subject,
-        vscode.TreeItemCollapsibleState.Collapsed
+        open
+            ? vscode.TreeItemCollapsibleState.Expanded
+            : vscode.TreeItemCollapsibleState.Collapsed
     )
-    item.id = `commit:${commit.changeId}`
+    item.id = `commit:${commit.changeId}${shut ? `:${shut}` : ""}`
     item.description = [
         commit.conflicted
             ? "⚠ conflicted"
