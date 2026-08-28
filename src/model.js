@@ -233,7 +233,7 @@ const committedMode = (store) =>
  *  read as-is it would render a tree while the toggle offered to switch to one. */
 function layoutFor(branch, overrides) {
     const mode =
-        overrides?.get(layoutKey(branch)) ?? cfg().get("fileLayout", "list")
+        overrides?.get(layoutKey(branch)) ?? cfg().get("fileLayout", "tree")
     return mode === "group" ? "tree" : mode
 }
 

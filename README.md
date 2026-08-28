@@ -36,8 +36,9 @@ once reviewed.
 Ticks are stored per repo and survive a reload, but clear as soon as the branch's version
 of a file changes — absorbing an edit into a file you'd already reviewed un-ticks it.
 
-Files are shown as a flat list or as a folder tree, chosen per branch from an icon on the
-branch row (`butReview.fileLayout` sets the default). The tree nests properly, folders
+Files are shown as a folder tree, or as a flat list where that reads better, chosen per
+branch from an icon on the branch row (`butReview.fileLayout` sets the default). The tree
+nests properly, folders
 before files at each level, and files at the repo root are the last rows — the level
 they're on says where everything lives, so no row has to spell it out.
 
@@ -181,7 +182,7 @@ On Linux or Windows that prepend is harmless, but you may need to adjust it if `
 | --- | --- | --- |
 | `butReview.ignoredChecks` | `[]` | CI checks to exclude from a branch's status, matched as case-insensitive substrings. Useful for a slow or flaky job you never act on. |
 | `butReview.botReviewers` | `chatgpt-codex-connector`, `github-actions`, `copilot-pull-request-reviewer` | Reviewers whose approvals and comments don't count. Logins ending in `[bot]` are always ignored; Codex has no such suffix, hence this list. |
-| `butReview.fileLayout` | `list` | `list` or `tree`. Overridable per branch from the branch row. |
+| `butReview.fileLayout` | `tree` | `list` or `tree`. Overridable per branch from the branch row. |
 | `butReview.demoteBranches` | `["docs", "debug"]` | Stacks whose every branch matches one of these hyphen-separated tokens sort to the bottom regardless of activity. |
 
 Six theme colours are contributed under `butReview.*` for retuning the icons, the

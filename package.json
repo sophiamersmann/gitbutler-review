@@ -384,7 +384,7 @@
                         "list",
                         "tree"
                     ],
-                    "default": "list",
+                    "default": "tree",
                     "enumDescriptions": [
                         "A flat list of files",
                         "A folder tree, one row per directory"

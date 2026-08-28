@@ -6,6 +6,12 @@ const fs = require("fs")
 const path = require("path")
 const { execFileSync } = require("child_process")
 
+const settings = {
+    ignoredChecks: [],
+    botReviewers: ["chatgpt-codex-connector", "github-actions"],
+    demoteBranches: ["docs", "debug"],
+}
+
 const stub = {
     TreeItem: class {
         constructor(l, c) {
@@ -82,14 +88,9 @@ const stub = {
     },
     workspace: {
         workspaceFolders: [{ uri: { fsPath: process.cwd() } }],
-        getConfiguration: () => ({
-            get: (k, d) =>
-                ({
-                    ignoredChecks: [],
-                    botReviewers: ["chatgpt-codex-connector", "github-actions"],
-                    demoteBranches: ["docs", "debug"],
-                })[k] ?? d,
-        }),
+        // an object rather than a literal per call, so a case can set one and
+        // read what the code makes of it
+        getConfiguration: () => ({ get: (k, d) => settings[k] ?? d }),
     },
     commands: { executeCommand: () => {} }, // setContext, nothing to observe here
     env: {},
@@ -249,7 +250,11 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
         if (filesRow?.collapsibleState !== 2 || group?.collapsibleState !== 1)
             bad.push("a branch does not open on its files with its commits folded")
 
+        // as a list, so the row's children are the files themselves — the tree
+        // layout is a case of its own further down
+        memory.set(api.layoutKey(many), "list")
         const branchFiles = await tree.getChildren(filesRow)
+        memory.delete(api.layoutKey(many))
         if (branchFiles.length !== many.fileCount)
             bad.push(`the files row holds ${branchFiles.length} of ${many.fileCount} files`)
 
@@ -263,7 +268,9 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
         if (!commits.some((c) => /\d+ files?/.test(c.description ?? "")))
             bad.push("no commit row carries a file count")
 
+        memory.set(api.layoutKey(many), "list")
         const files = await tree.getChildren(commits[0])
+        memory.delete(api.layoutKey(many))
         if (!files.length) bad.push("the newest commit shows no files")
         // the same file read as the branch's diff and as one commit's are two
         // reviews, so a tick on one must not read as a tick on the other
@@ -657,7 +664,7 @@ console.log(
             ],
             [api.layoutKey(ws) === api.layoutKey(stack.branches[0]), false, "so do layout keys"],
             [foreign.above.length + foreign.other.length, 0, "no member is foreign to it"],
-            [row.contextValue, "branch:list", "carries the layout toggle"],
+            [row.contextValue, "branch:tree", "carries the layout toggle"],
             [kids.length, stack.branches.length + 1, "one row above the branches"],
             [row.description, `${wsFiles.length} files`, "the provider counts what the rows do"],
         ].filter(([got, want]) => got !== want)
@@ -1022,9 +1029,16 @@ console.log(
 // switch to one
 const [a, b, c] = [{ name: "a" }, { name: "b" }, { name: "c" }]
 const dflt = [a, b, c].map((x) => api.layoutFor(x, overrides))
+if (dflt.join("/") !== "tree/tree/tree") {
+    console.log(`PROBLEM  layout: unset gives ${dflt.join("/")}, want tree/tree/tree`)
+    process.exitCode = 1
+}
+// against a setting of "list", so an override and the fallback are told apart
+settings.fileLayout = "list"
 overrides.set(api.layoutKey(a), "tree")
 overrides.set(api.layoutKey(c), "group")
 const overridden = [a, b, c].map((x) => api.layoutFor(x, overrides))
+delete settings.fileLayout
 if (overridden.join("/") !== "tree/list/tree") {
     console.log(
         `PROBLEM  layout: overrides gave ${overridden.join("/")}, want tree/list/tree`
@@ -1032,7 +1046,7 @@ if (overridden.join("/") !== "tree/list/tree") {
     process.exitCode = 1
 }
 console.log(
-    `ok: layout — default gives ${dflt.join("/")}, overrides give ${overridden.join("/")} (legacy "group" reads as tree)`
+    `ok: layout — unset gives ${dflt.join("/")}, and over a "list" setting the overrides give ${overridden.join("/")} (legacy "group" reads as tree)`
 )
 
 console.log(`\n▾ ${branch.name} — as a tree`)
