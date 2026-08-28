@@ -198,6 +198,8 @@ const layoutKey = (branch) => `layout:${branch.key ?? branch.name}`
 
 const commitsKey = (branch) => `commits:${branch.key ?? branch.name}`
 
+const filesKey = (branch) => `files:${branch.key ?? branch.name}`
+
 // a folder row's identity, so VSCode remembers a collapse across a refresh.
 // Namespaced like the others: the whole-stack lens shows the same directories
 // as its own tip branch, and the two must not share a row
@@ -406,4 +408,4 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { commitLens, commitsKey, committedMode, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
+module.exports = { commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }

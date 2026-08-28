@@ -4,7 +4,7 @@
 const vscode = require("vscode")
 const path = require("path")
 const { ago, uri } = require("./exec")
-const { allReviewed, ciState, commitsKey, entriesIn, folderKey, humanDecision, hunkLine, hunkRange, isDemoted, layoutFor, lineRange, openThreads, reviewOf, rollup, stackName } = require("./model")
+const { allReviewed, ciState, commitsKey, entriesIn, filesKey, folderKey, humanDecision, hunkLine, hunkRange, isDemoted, layoutFor, lineRange, openThreads, reviewOf, rollup, stackName } = require("./model")
 
 const BASE = "butbase" // butbase:/<path>?<ref>    — the file as of a ref, read-only
 
@@ -197,13 +197,15 @@ function hunkItem(row, i, unplaced) {
  *  to read a diff you came here to read by file, so they cost the file list one
  *  line and nothing more until you ask. An icon rather than none, because in
  *  tree layout this row's siblings are directories. */
-function commitsGroupItem(branch) {
+function commitsGroupItem(branch, open, shut = 0) {
     const n = branch.commits.length
     const item = new vscode.TreeItem(
         `${n} commit${n === 1 ? "" : "s"}`,
-        vscode.TreeItemCollapsibleState.Collapsed
+        open
+            ? vscode.TreeItemCollapsibleState.Expanded
+            : vscode.TreeItemCollapsibleState.Collapsed
     )
-    item.id = commitsKey(branch)
+    item.id = `${commitsKey(branch)}${shut ? `:${shut}` : ""}`
     item.iconPath = new vscode.ThemeIcon(
         "git-commit",
         new vscode.ThemeColor("butReview.branchIcon")
@@ -217,6 +219,36 @@ function commitsGroupItem(branch) {
     )
     item.contextValue = "commits"
     item.commitsOf = branch
+    return item
+}
+
+/** The branch's own diff, as the row the commits row folds. Open to begin with,
+ *  because a branch's files are what you opened the branch for, and its count
+ *  comes from the pass every branch row already reads — so a folded one costs
+ *  no diff at all. `shut` is the counter `commitItem` carries, for the same
+ *  reason */
+function filesGroupItem(branch, open, shut = 0) {
+    const n = branch.fileCount
+    const item = new vscode.TreeItem(
+        n === undefined ? "Files" : `${n} file${n === 1 ? "" : "s"}`,
+        open
+            ? vscode.TreeItemCollapsibleState.Expanded
+            : vscode.TreeItemCollapsibleState.Collapsed
+    )
+    item.id = `${filesKey(branch)}${shut ? `:${shut}` : ""}`
+    item.iconPath = new vscode.ThemeIcon(
+        "list-flat",
+        new vscode.ThemeColor("butReview.branchIcon")
+    )
+    item.tooltip = new vscode.MarkdownString(
+        [
+            `**${branch.name}** — its own diff, against \`${branch.base}\``,
+            "",
+            "Folds while the commits row above is open: the same files are in there, under the commits that wrote them.",
+        ].join("\n")
+    )
+    item.contextValue = "files"
+    item.filesOf = branch
     return item
 }
 
@@ -560,4 +592,4 @@ function churn(hunks) {
     return `+${adds} −${dels}`
 }
 
-module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, filesGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }

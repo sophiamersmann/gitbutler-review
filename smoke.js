@@ -235,14 +235,23 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
     if (!many) {
         console.log("ok: commits — skipped, no branch here holds two")
     } else {
-        const rows = await tree.getChildren({ branch: many })
-        const group = rows[0]
-        if (!group?.commitsOf)
-            bad.push("the commits row is not the first row under a branch")
-        if (rows.slice(1).some((r) => r.commitsOf))
-            bad.push("more than one commits row")
+        // two rows and two rows only: the branch's two readings, the files one
+        // open because that is what you opened the branch for
+        const branchNode = { branch: many }
+        const rows = await tree.getChildren(branchNode)
+        const [group, filesRow] = rows
+        if (rows.length !== 2 || !group?.commitsOf || !filesRow?.filesOf)
+            bad.push(`a branch's rows are ${rows.map((r) => r.label).join(", ")}`)
         if (group?.label !== `${many.commits.length} commits`)
-            bad.push(`the row says ${JSON.stringify(group?.label)}`)
+            bad.push(`the commits row says ${JSON.stringify(group?.label)}`)
+        if (filesRow?.label !== `${many.fileCount} files`)
+            bad.push(`the files row says ${JSON.stringify(filesRow?.label)}`)
+        if (filesRow?.collapsibleState !== 2 || group?.collapsibleState !== 1)
+            bad.push("a branch does not open on its files with its commits folded")
+
+        const branchFiles = await tree.getChildren(filesRow)
+        if (branchFiles.length !== many.fileCount)
+            bad.push(`the files row holds ${branchFiles.length} of ${many.fileCount} files`)
 
         const commits = await tree.getChildren(group)
         if (commits.length !== many.commits.length)
@@ -258,7 +267,7 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
         if (!files.length) bad.push("the newest commit shows no files")
         // the same file read as the branch's diff and as one commit's are two
         // reviews, so a tick on one must not read as a tick on the other
-        const mine = new Set(rows.slice(1).flatMap((r) => (r.review ?? []).map((x) => x.key)))
+        const mine = new Set(branchFiles.flatMap((r) => (r.review ?? []).map((x) => x.key)))
         if (files.some((f) => (f.review ?? []).some((x) => mine.has(x.key))))
             bad.push("a commit's file shares its review key with the branch's")
         if (!files.every((f) => (f.review ?? []).every((x) => x.key.includes("commit:"))))
@@ -306,16 +315,35 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
                 bad.push("closing the open commit left the branch reading as commits")
         }
 
+        // the readings fold each other: opening one leaves the other in place,
+        // shut, under an id VSCode has never seen — the only way to close a row
+        // it is already restoring as open
+        tree.readAs(many, "commits")
+        const asCommits = await tree.getChildren(branchNode)
+        if (asCommits[0].collapsibleState !== 2 || asCommits[1].collapsibleState !== 1)
+            bad.push("opening the commits row did not fold the files row")
+        if (asCommits[1].id === filesRow.id)
+            bad.push("the folded files row kept its id, which VSCode would restore as open")
+        if (asCommits.length !== 2)
+            bad.push("a folded reading left rows behind")
+        tree.readAs(many, "files")
+        const asFiles = await tree.getChildren(branchNode)
+        if (asFiles[1].collapsibleState !== 2 || asFiles[0].collapsibleState !== 1)
+            bad.push("opening the files row did not fold the commits row")
+        if (asFiles[0].id === group.id)
+            bad.push("the folded commits row kept its id")
+
         if (one) {
+            // one commit is one reading, so neither row is worth a click
             const solo = await tree.getChildren({ branch: one })
-            if (solo.some((r) => r.commitsOf))
-                bad.push("a one-commit branch still grew a commits row")
+            if (solo.some((r) => r.commitsOf || r.filesOf))
+                bad.push("a one-commit branch grew rows to fold")
         }
         for (const b of bad) console.log(`PROBLEM  commits: ${b}`)
         if (bad.length) process.exitCode = 1
         else
             console.log(
-                `ok: commits — ${commits.length} rows under \`${many.name}\`, ${files.length} files in its newest, ticks namespaced apart from the branch's, one open at a time${one ? "; a one-commit branch grows no row" : ""}`
+                `ok: commits — ${commits.length} rows under \`${many.name}\`, ${files.length} files in its newest, ticks namespaced apart from the branch's, one open at a time; ${many.fileCount} branch files fold away while they are read${one ? "; a one-commit branch grows neither row" : ""}`
             )
     }
 }

@@ -27,16 +27,27 @@ function activate(context) {
         treeDataProvider: tree,
         manageCheckboxStateManually: true,
     })
-    // Expansion is VSCode's state, not the tree's, so the accordion under a
-    // commits row — one commit open at a time — only works if the view says
-    // when one opens.
-    const commitToggled = (element, open) => {
-        if (element.commit)
-            tree.openOneCommit(element.commit.branch, element.commit.commit, open)
+    // Expansion is VSCode's state, not the tree's, so both accordions — one
+    // reading open per branch, one commit open within it — only work if the
+    // view says when a row opens.
+    const expanded = (element) => {
+        if (element.commitsOf) tree.readAs(element.commitsOf, "commits")
+        else if (element.filesOf) tree.readAs(element.filesOf, "files")
+        else if (element.commit)
+            tree.openOneCommit(element.commit.branch, element.commit.commit, true)
     }
     context.subscriptions.push(
-        branchView.onDidExpandElement((e) => commitToggled(e.element, true)),
-        branchView.onDidCollapseElement((e) => commitToggled(e.element, false))
+        branchView.onDidExpandElement((e) => expanded(e.element)),
+        // only a commit: folding a reading closes it and opens nothing, which
+        // is a state the reader is allowed to be in
+        branchView.onDidCollapseElement((e) => {
+            if (e.element.commit)
+                tree.openOneCommit(
+                    e.element.commit.branch,
+                    e.element.commit.commit,
+                    false
+                )
+        })
     )
 
     const dirty = new UncommittedTree()

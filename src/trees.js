@@ -4,8 +4,8 @@ const vscode = require("vscode")
 const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
-const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, fileItem, folderItem, hunkItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
-const { byBranch, commitLens, commitsKey, committedMode, fileTree, layoutFor, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
+const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, filesGroupItem, fileItem, folderItem, hunkItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
+const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, layoutFor, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -30,13 +30,14 @@ class BranchTree extends Tree {
         // one workspaceState-backed store, two key namespaces
         this.reviewed = store
         this.overrides = store
-        // the one commit open under each branch, and how many times each commit
-        // row has been closed to make room for another. Not in the store: both
-        // describe rows on screen, and a stored one would outlive them
+        // which of a branch's two readings is open, which commit within the
+        // commits one, and how many times each row has been closed to make room
+        // for another. Not in the store: all three describe rows on screen, and
+        // a stored one would outlive them
+        this.reading = new Map()
         this.openCommit = new Map()
         this.shut = new Map()
-        // the commits row a branch's commits hang off, so shutting one of them
-        // repaints that row alone
+        // the branch row, so closing one of its rows repaints that branch alone
         this.rowFor = new Map()
     }
 
@@ -47,24 +48,43 @@ class BranchTree extends Tree {
         super.refresh()
     }
 
-    /** One commit open at a time under a branch: expanding a second closes the
-     *  first, so a branch's files are never split across two commits on screen.
-     *  Does nothing when the row is already in that state — VSCode re-reports
-     *  a row it has just repainted, and repainting on the way back in would
-     *  never settle. */
+    /** A branch reads as its files or as its commits, one at a time: opening
+     *  either row folds the other, which stays where it is with its count on it.
+     *  Nothing is hidden — the files are in the commits row too, under whichever
+     *  commit wrote them. */
+    readAs(branch, which) {
+        const key = commitsKey(branch)
+        if ((this.reading.get(key) ?? "files") === which) return
+        this.reading.set(key, which)
+        this.close(
+            which === "files" ? commitsKey(branch) : filesKey(branch),
+            branch
+        )
+    }
+
+    /** One commit open at a time under a branch, so a branch's files are never
+     *  split across two commits on screen. Does nothing when the row is already
+     *  in that state — VSCode re-reports a row it has just repainted, and
+     *  repainting on the way back in would never settle. */
     openOneCommit(branch, commit, open) {
         const key = commitsKey(branch)
         const was = this.openCommit.get(key)
         if (open === (was === commit.changeId)) return
         if (!open) return void this.openCommit.delete(key)
-
         this.openCommit.set(key, commit.changeId)
-        // only the row being closed needs a repaint, and only to be handed a
-        // new id: the one the reader just opened is already open
-        if (was) {
-            this.shut.set(was, (this.shut.get(was) ?? 0) + 1)
-            this.changed.fire(this.rowFor.get(key))
-        }
+        // the row the reader just opened is already open; only the one being
+        // closed needs anything doing to it
+        if (was) this.close(was, branch)
+    }
+
+    /** Close a row VSCode is holding open. It restores expansion from the id and
+     *  offers no way to collapse a row (microsoft/vscode#40179), so the row comes
+     *  back under an id it has never seen — which is all the count is for. */
+    close(id, branch) {
+        this.shut.set(id, (this.shut.get(id) ?? 0) + 1)
+        // no row cached means the tree has been rebuilt since — `fire()` with
+        // nothing is the whole tree, which is the right answer then
+        this.changed.fire(this.rowFor.get(commitsKey(branch)))
     }
 
     async getChildren(node) {
@@ -89,6 +109,8 @@ class BranchTree extends Tree {
                     )
                 )
             }
+            if (node.filesOf)
+                return await this.filesOf(root, node.filesOf, node.filesOf)
             if (node.commit)
                 return await this.filesOf(
                     root,
@@ -96,15 +118,26 @@ class BranchTree extends Tree {
                     node.commit.branch
                 )
 
-            const rows = await this.filesOf(root, node.branch, node.branch)
-            // above the files, because it is the same diff read the other way
-            // and a row that moves with the file count is a row you hunt for. A
-            // branch of one commit is that commit, so the row would lead to the
-            // list it already sits on.
-            if (!(node.branch.commits?.length > 1)) return rows
-            const group = commitsGroupItem(node.branch)
-            this.rowFor.set(group.id, group)
-            return [group, ...rows]
+            // a branch of one commit is that commit, so a commits row would
+            // lead to the file list it sits on, and the file list needs no row
+            // of its own to fold against
+            if (!(node.branch.commits?.length > 1))
+                return await this.filesOf(root, node.branch, node.branch)
+            const key = commitsKey(node.branch)
+            const reading = this.reading.get(key) ?? "files"
+            this.rowFor.set(key, node)
+            return [
+                commitsGroupItem(
+                    node.branch,
+                    reading === "commits",
+                    this.shut.get(key)
+                ),
+                filesGroupItem(
+                    node.branch,
+                    reading === "files",
+                    this.shut.get(filesKey(node.branch))
+                ),
+            ]
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
