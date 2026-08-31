@@ -82,6 +82,12 @@
                     "icon": "icon-stack3.svg"
                 },
                 {
+                    "id": "butReview.plans",
+                    "name": "Plans",
+                    "when": "butReview.hasPlans",
+                    "icon": "icon-stack3.svg"
+                },
+                {
                     "id": "butReview.prs",
                     "name": "Pull Requests",
                     "icon": "icon-stack3.svg"
@@ -198,6 +204,35 @@
                 "command": "butReview.prevChange",
                 "title": "Previous Change on This Branch",
                 "category": "GitButler Review"
+            },
+            {
+                "command": "butReview.openPlan",
+                "title": "Open Plan",
+                "category": "GitButler Review"
+            },
+            {
+                "command": "butReview.refreshPlans",
+                "title": "Refresh Plans",
+                "category": "GitButler Review",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "butReview.deletePlan",
+                "title": "Delete Plan",
+                "category": "GitButler Review",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "butReview.newPlan",
+                "title": "New Plan\u2026",
+                "category": "GitButler Review",
+                "icon": "$(add)"
+            },
+            {
+                "command": "butReview.linkPlan",
+                "title": "Link Plan\u2026",
+                "category": "GitButler Review",
+                "icon": "$(link)"
             }
         ],
         "keybindings": [
@@ -265,6 +300,18 @@
                 {
                     "command": "butReview.editHere",
                     "when": "butReview.committedPane"
+                },
+                {
+                    "command": "butReview.openPlan",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.deletePlan",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.linkPlan",
+                    "when": "false"
                 }
             ],
             "view/title": [
@@ -292,9 +339,39 @@
                     "command": "butReview.refreshPrs",
                     "when": "view == butReview.prs",
                     "group": "navigation"
+                },
+                {
+                    "command": "butReview.newPlan",
+                    "when": "view == butReview.plans",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "butReview.refreshPlans",
+                    "when": "view == butReview.plans",
+                    "group": "navigation@2"
                 }
             ],
             "view/item/context": [
+                {
+                    "command": "butReview.linkPlan",
+                    "when": "view == butReview.branches && viewItem =~ /^branch:/",
+                    "group": "inline@1"
+                },
+                {
+                    "command": "butReview.newPlan",
+                    "when": "view == butReview.branches && viewItem =~ /^branch:/",
+                    "group": "1_modify"
+                },
+                {
+                    "command": "butReview.linkPlan",
+                    "when": "view == butReview.plans && viewItem =~ /^plan(Stage)?$/",
+                    "group": "1_modify"
+                },
+                {
+                    "command": "butReview.deletePlan",
+                    "when": "view == butReview.plans && viewItem == plan",
+                    "group": "inline@1"
+                },
                 {
                     "command": "butReview.absorbOne",
                     "when": "view == butReview.uncommitted && viewItem =~ /^dirty(File|Hunk)$/",
@@ -403,6 +480,11 @@
                     ],
                     "default": "workspace",
                     "markdownDescription": "What the right-hand side of a review diff shows. Toggled per repository from the Branches title bar; this is the default for a repository you have not toggled."
+                },
+                "butReview.plansDirectory": {
+                    "type": "string",
+                    "default": "plans",
+                    "description": "Where plan files live, relative to the repo root. Empty hides the Plans view."
                 }
             }
         }

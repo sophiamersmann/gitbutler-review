@@ -2,10 +2,11 @@
 
 const vscode = require("vscode")
 const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
+const { listPlans } = require("./plans")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
-const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, filesGroupItem, fileItem, folderItem, hunkItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
-const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, layoutFor, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
+const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, filesGroupItem, fileItem, folderItem, hunkItem, olderPlansItem, planItem, planLinkItem, planStageItem, planTaskItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
+const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, layoutFor, liveBranch, livePlans, planIndex, planRows, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -118,15 +119,24 @@ class BranchTree extends Tree {
                     node.commit.branch
                 )
 
+            // the plan comes before the diff, as the whole-stack row comes
+            // before the branches it reads
+            const plans = (node.branch.plans ?? []).map((link) =>
+                planLinkItem(link, node.branch)
+            )
             // a branch of one commit is that commit, so a commits row would
             // lead to the file list it sits on, and the file list needs no row
             // of its own to fold against
             if (!(node.branch.commits?.length > 1))
-                return await this.filesOf(root, node.branch, node.branch)
+                return [
+                    ...plans,
+                    ...(await this.filesOf(root, node.branch, node.branch)),
+                ]
             const key = commitsKey(node.branch)
             const reading = this.reading.get(key) ?? "files"
             this.rowFor.set(key, node)
             return [
+                ...plans,
                 commitsGroupItem(
                     node.branch,
                     reading === "commits",
@@ -214,13 +224,19 @@ class BranchTree extends Tree {
 
     /** A one-branch stack is shown as the branch itself — no pointless wrapper. */
     async topLevel(root) {
-        const stacks = stacksOf(await status(root), this.overrides)
+        // a readdir whose parses are already cached by mtime, so it costs a
+        // stat per plan beside a status call that costs 230ms
+        const [st, plans] = await Promise.all([status(root), listPlans(root)])
+        const stacks = stacksOf(st, this.overrides)
         const files = await branchFiles(root, stacks)
         this.overlap = overlapMap(files)
         this.where = positions(stacks)
+        const links = planIndex(plans)
         for (const s of stacks)
-            for (const b of s.branches)
+            for (const b of s.branches) {
                 b.fileCount = files.get(b.name)?.length
+                b.plans = links.get(b.name) ?? []
+            }
         return stacks.map((stack) =>
             stack.branches.length === 1
                 ? branchItem(stack.branches[0], this.overrides)
@@ -321,4 +337,90 @@ class PrTree extends Tree {
     }
 }
 
-module.exports = { BranchTree, UncommittedTree, PrTree }
+// How many plans the view shows before the archive row. A count rather than an
+// age: mtime is reset wholesale by a copy — 25 of this repo's 54 plans share one
+// — so a duration would be measuring the last bulk copy, and a count keeps the
+// view one screen tall whatever the directory holds.
+const RECENT_ROWS = 12
+
+/** Plan documents: the ones whose branch is applied first, then the rest newest
+ *  first, with everything past the first screen behind one row. */
+class PlanTree extends Tree {
+    constructor() {
+        super()
+        // plan name -> its row, so a click can hand the view the node to expand.
+        // Rebuilt with the rows, since a stale one is a row VSCode no longer has
+        this.rowFor = new Map()
+    }
+
+    refresh() {
+        this.rowFor.clear()
+        this.where = undefined
+        super.refresh()
+    }
+
+    // reveal() is the only way to open a row from here, and it needs this. A
+    // plan is either a top-level row or one of the archive's; nothing else is
+    // ever revealed
+    getParent(node) {
+        return node.parent
+    }
+
+    async getChildren(node) {
+        const root = repoRoot()
+        if (!root) return []
+        try {
+            if (node?.plans) return node.plans.map((p) => this.row(p, node))
+            if (node?.plan) return this.rows(node.plan)
+            if (node) return []
+
+            const plans = await listPlans(root)
+            this.where = await appliedBranches(root)
+            const live = livePlans(plans, this.where)
+            const rest = plans.filter((p) => !live.some((l) => l.plan === p))
+            // the promoted rows come out of the recency budget rather than on
+            // top of it, so the view stays one screen whatever is applied
+            const recent = Math.max(0, RECENT_ROWS - live.length)
+            const older = rest.slice(recent)
+            const archive = older.length ? olderPlansItem(older) : undefined
+            return [
+                ...live.map((l) => this.row(l.plan, undefined, l)),
+                ...rest.slice(0, recent).map((p) => this.row(p)),
+                ...(archive ? [archive] : []),
+            ]
+        } catch (e) {
+            vscode.window.showErrorMessage(`but-review: ${e.message}`)
+            return []
+        }
+    }
+
+    row(plan, parent, live) {
+        const item = planItem(plan, live)
+        item.parent = parent
+        this.rowFor.set(plan.name, item)
+        return item
+    }
+
+    /** Whichever structure the plan has — `planRows` picks it, so the row that
+     *  offered a twistie and the rows behind it cannot disagree. */
+    rows(plan) {
+        return planRows(plan).map((row) =>
+            row.stage
+                ? planStageItem(
+                      row.stage,
+                      plan,
+                      !!liveBranch(row.stage.branches, this.where ?? new Map())
+                  )
+                : planTaskItem(row.task, plan)
+        )
+    }
+}
+
+/** Where each applied branch sits, for the promotion. A repo GitButler does not
+ *  manage still has plans, so a failed status costs the order and nothing more. */
+const appliedBranches = (root) =>
+    status(root)
+        .then((st) => positions(stacksOf(st)))
+        .catch(() => new Map())
+
+module.exports = { BranchTree, PlanTree, UncommittedTree, PrTree }

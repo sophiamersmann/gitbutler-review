@@ -408,4 +408,226 @@ function nextHunk(ranges, line, step) {
     return i !== -1 ? i : step > 0 ? 0 : ranges.length - 1
 }
 
-module.exports = { commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
+/** Lines outside fenced code blocks, paired with their 0-based numbers. Plans
+ *  quote other plans, so a checklist inside a fence belongs to somebody else. */
+function proseLines(text) {
+    const lines = []
+    let fenced = false
+    text.split("\n").forEach((line, at) => {
+        if (/^\s*```/.test(line)) fenced = !fenced
+        else if (!fenced) lines.push([line, at])
+    })
+    return lines
+}
+
+/** Markdown reduced to what a tree row can show: link labels without their
+ *  targets, no backticks, no bold. */
+const plainText = (s) =>
+    s
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/\*\*/g, "")
+        .replace(/`/g, "")
+        .trim()
+
+/** The title a plan gives itself, or undefined when it has no `# ` heading. */
+function planTitle(text) {
+    for (const [line] of proseLines(text)) {
+        const heading = /^#\s+(.+)$/.exec(line)
+        if (heading) return plainText(heading[1])
+    }
+    return undefined
+}
+
+/** What a plan with no title of its own is called: its filename, less the date
+ *  prefix the naming convention puts there and less the extension. */
+function planName(name) {
+    const words = name
+        .replace(/^\d{4}-\d{2}-\d{2}-/, "")
+        .replace(/\.md$/, "")
+        .replace(/-/g, " ")
+    return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+const TASK = /^\s*[-*]\s+\[([ xX])\]\s+(.*\S)\s*$/
+
+/** `- [x]` items with the line they sit on and, when the text is a link, what
+ *  it points at — which is the whole of what makes a task a phase. */
+function planTasks(text) {
+    const tasks = []
+    for (const [line, at] of proseLines(text)) {
+        const task = TASK.exec(line)
+        if (!task) continue
+        tasks.push({
+            text: plainText(task[2]),
+            done: task[1].toLowerCase() === "x",
+            line: at,
+            link: /\[[^\]]*\]\(([^)]+)\)/.exec(task[2])?.[1],
+        })
+    }
+    return tasks
+}
+
+// What tells a plan's own `Key: value` header from the prose under it.
+// `planPreview` skips such a block, `planHeader` reads it.
+const HEADER_LINE = /^[A-Z][\w ]*:/
+
+/** The first prose paragraph, for the tooltip — most of what tells two
+ *  `svg-tester-*` plans apart. A leading block of `Key: value` lines is the
+ *  plan's own header rather than its prose, so it is skipped. */
+function planPreview(text) {
+    let paragraph = []
+    for (const [line] of proseLines(text)) {
+        if (/^#/.test(line)) {
+            if (paragraph.length) break
+            continue
+        }
+        if (line.trim()) {
+            paragraph.push(line.trim())
+            continue
+        }
+        if (!paragraph.length) continue
+        if (!paragraph.every((l) => HEADER_LINE.test(l))) break
+        paragraph = []
+    }
+    const preview = paragraph.join(" ")
+    return preview.length > 300 ? `${preview.slice(0, 300)}…` : preview
+}
+
+/** The `Key: value` block under the title. `·` separates segments as well as a
+ *  newline does, so the review-findings `Branch: … · Base: … · Started: …` line
+ *  reads as three keys. */
+function planHeader(text) {
+    const paragraph = []
+    for (const [line] of proseLines(text)) {
+        if (/^#/.test(line)) {
+            if (paragraph.length) break
+            continue
+        }
+        if (line.trim()) paragraph.push(line.trim())
+        else if (paragraph.length) break
+    }
+    if (!paragraph.every((line) => HEADER_LINE.test(line))) return {}
+    const header = {}
+    for (const segment of paragraph.flatMap((l) => l.split("·"))) {
+        const entry = /^\s*([A-Z][\w ]*):\s*(.*\S)\s*$/.exec(segment)
+        if (entry) header[entry[1]] = entry[2]
+    }
+    return header
+}
+
+/** Whether a line belongs to a plan's header rather than its prose. */
+const isHeaderLine = (line) => HEADER_LINE.test(line)
+
+/** How many words a branch name and a plan's filename share. The whole of the
+ *  guess a picker is allowed to make: measured against 890 branch names, 2 of 56
+ *  plans matched exactly and several close matches were plainly wrong, so this
+ *  orders a list a human confirms and never decides anything on its own. */
+const sharedWords = (branch, name) => {
+    const words = new Set(planName(name).toLowerCase().split(" "))
+    return branch
+        .toLowerCase()
+        .split("-")
+        .filter((word) => words.has(word)).length
+}
+
+/** The branches a plan, or one phase of one, says it lands on. */
+const planBranches = (text) =>
+    (planHeader(text).Branch ?? "")
+        .split(",")
+        .map((name) => plainText(name))
+        .filter(Boolean)
+
+/** Branch name to the plans and phases that name it, which is the whole of how
+ *  a branch row finds its plan. A branch named by both a plan and one of its
+ *  phases resolves to the phase, because the phase says where in the plan the
+ *  work is. */
+function planIndex(plans) {
+    const index = new Map()
+    const add = (name, entry) =>
+        index.set(name, [...(index.get(name) ?? []), entry])
+    for (const plan of plans) {
+        for (const stage of plan.stages)
+            for (const name of stage.branches) add(name, { plan, stage })
+        for (const name of plan.branches)
+            if (!plan.stages.some((s) => s.branches.includes(name)))
+                add(name, { plan })
+    }
+    return index
+}
+
+// Where two live branches sort against each other, which is the order the
+// Branches view puts them in.
+const byRank = (a, b) => a.at.stack - b.at.stack || a.at.depth - b.at.depth
+
+/** Of the branches named, the one nearest the top of the Branches view, which is
+ *  the work now. Undefined when none of them is applied. */
+const liveBranch = (names, where) =>
+    names
+        .map((branch) => ({ branch, at: where.get(branch) }))
+        .filter((live) => live.at)
+        .sort(byRank)[0]
+
+/** Plans with a branch applied right now, each carrying the phase that names it,
+ *  ordered as the Branches view orders those branches. Liveness is derived, so a
+ *  merged branch archives its own plan with nothing to update. */
+function livePlans(plans, where) {
+    const live = []
+    for (const plan of plans) {
+        const candidates = []
+        for (const stage of plan.stages) {
+            const branch = liveBranch(stage.branches, where)
+            if (branch) candidates.push({ plan, stage, ...branch })
+        }
+        const own = liveBranch(plan.branches, where)
+        // last, so a phase wins a tie against its own plan
+        if (own) candidates.push({ plan, ...own })
+        const best = candidates.sort(byRank)[0]
+        if (best) live.push(best)
+    }
+    return live.sort(byRank)
+}
+
+/** A plan directory's phases: the `.md` children its overview links to, in the
+ *  order it links them, each carrying the checkbox that links it. The children
+ *  it never links are documents rather than phases, and come after. */
+function planStages(tasks, children, overviewName) {
+    const byName = new Map(children.map((c) => [c.name, c]))
+    const stages = []
+    // the overview seeds it, so a phase file's backlink cannot make the
+    // overview a phase of itself
+    const linked = new Set([overviewName])
+    for (const task of tasks) {
+        const name = linkTarget(task.link)
+        if (!name || linked.has(name) || !byName.has(name)) continue
+        linked.add(name)
+        stages.push({ ...byName.get(name), done: task.done })
+    }
+    return { stages, docs: children.filter((c) => !linked.has(c.name)) }
+}
+
+/** The sibling a stage link points at. A URL is not one. */
+const linkTarget = (link) =>
+    link && !/^[a-z][a-z+.-]*:/i.test(link)
+        ? link.replace(/^\.\//, "").split(/[#?]/)[0]
+        : undefined
+
+/** What a plan expands into: its phases — the files of a plan directory, or the
+ *  checklist a single-file plan writes them as. A plan that lists no phases has
+ *  no children, since its `##`s are the shape of the document rather than the
+ *  work, and a row per section is a table of contents nobody asked for. */
+function planRows(plan) {
+    const stages = [...plan.stages, ...plan.docs]
+    if (stages.length) return stages.map((stage) => ({ stage }))
+    return plan.tasks.map((task) => ({ task }))
+}
+
+/** `11/13` over a plan's phases, or over its tasks when it has no phases. Empty
+ *  when it has neither: a placeholder would be a column, and this is not a
+ *  table. */
+function planProgress(plan) {
+    const items = plan.stages.length ? plan.stages : plan.tasks
+    if (!items.length) return ""
+    return `${items.filter((i) => i.done).length}/${items.length}`
+}
+
+module.exports = { isHeaderLine, liveBranch, livePlans, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }

@@ -184,6 +184,7 @@ const api = {
     ...require("./src/git"),
     ...require("./src/model"),
     ...require("./src/items"),
+    ...require("./src/plans"),
 }
 
 const root = process.cwd()
@@ -195,6 +196,219 @@ const st = JSON.parse(
 const stacks = api.stacksOf(st)
 const overrides = new Map()
 ;(async () => {
+// Plans, against a fixture rather than the live workspace: the view is a readdir
+// and a handful of regexes, and this repo keeps no `plans/` of its own. First of
+// the async sections because it is the one that asks nothing of the workspace,
+// so a repo whose diff is too large for the sections below still gets it run.
+{
+    const os = require("os")
+    const { PlanTree } = require("./src/trees")
+    const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "but-review-plans-"))
+    const dir = path.join(fixture, "plans")
+    fs.mkdirSync(dir)
+    // one plan per day, so mtime order is the fixture's own order and not the
+    // order the files happened to be written in
+    let day = 0
+    const write = (rel, text) => {
+        const at = path.join(dir, rel)
+        fs.mkdirSync(path.dirname(at), { recursive: true })
+        fs.writeFileSync(at, text)
+        const when = new Date(2026, 0, 1 + day++)
+        fs.utimesSync(at, when, when)
+        return at
+    }
+
+    for (let i = 1; i <= 12; i++)
+        write(`2026-01-${String(i).padStart(2, "0")}-filler-${i}.md`, `# Filler ${i}\n`)
+
+    // a fenced block quoting another plan's checklist and headings: none of it
+    // is this plan's, and counting it would make every plan about plans wrong
+    write(
+        "2026-02-01-with-tasks.md",
+        [
+            "# A plan with tasks",
+            "",
+            "Branch: with-tasks, and-another",
+            "",
+            "The opening paragraph, which is what the tooltip shows.",
+            "",
+            "- [x] first, done",
+            "- [ ] second",
+            "- [ ] third",
+            "",
+            "```markdown",
+            "- [x] quoted from somewhere else",
+            "## quoted heading",
+            "```",
+            "",
+            "## A real heading",
+        ].join("\n")
+    )
+    // sections, and nothing that reads as a phase: the shape of the document is
+    // not the shape of the work, so this one gets no children at all
+    write(
+        "2026-02-02-sections-only.md",
+        ["# Sections only", "", "## One", "", "### Not this one", "", "## Two"].join("\n")
+    )
+    // the shape the review-findings plans already write, on one line
+    write(
+        "2026-02-03-bare.md",
+        "# Nothing under here\n\nBranch: `bare` · Base: master · Started: 2026-02-03\n"
+    )
+    write("2026-02-04-no-title-of-its-own.md", "Just prose, no heading at all.\n")
+    write("stray.patch", "diff --git a/x b/x\n")
+
+    write(
+        "2026-02-05-dir/overview.md",
+        [
+            "# A plan in a directory",
+            "",
+            "Branch: whole-plan, first-phase",
+            "",
+            "## Phases",
+            "",
+            "- [x] [Phase 1: the first](phase-1.md)",
+            "- [x] [Phase 2: the second](./phase-2.md)",
+            "- [ ] [Phase 3: the third](phase-3.md#anchor)",
+            "- [ ] [not a file](https://example.com)",
+        ].join("\n")
+    )
+    write(
+        "2026-02-05-dir/phase-1.md",
+        "# Phase 1: the first\n\nBranch: first-phase\n\nBack to [overview](overview.md).\n"
+    )
+    write("2026-02-05-dir/phase-2.md", "# Phase 2: the second\n\nBranch: second-phase\n")
+    write("2026-02-05-dir/phase-3.md", "# Phase 3: the third\n\nBranch: second-phase\n")
+    write("2026-02-05-dir/notes.md", "# Notes nobody linked\n")
+    write("2026-02-05-dir/scratch.ts", "export const x = 1\n")
+
+    const was = stub.workspace.workspaceFolders[0].uri.fsPath
+    stub.workspace.workspaceFolders[0].uri.fsPath = fixture
+    const plans = await api.listPlans(fixture)
+    const tree = new PlanTree()
+    const top = await tree.getChildren()
+    const by = (title) => plans.find((p) => p.title === title)
+    const rowsOf = async (title) =>
+        await tree.getChildren(top.find((r) => r.label === title))
+
+    const index = api.planIndex(plans)
+    const linked = (name) => index.get(name) ?? []
+    // a branch of this repo's own is never one of the fixture's, so the rows a
+    // branch shows are built from the index rather than from a workspace
+    const branchRows = (name) =>
+        linked(name).map((link) => api.planLinkItem(link, { name }))
+    // promotion, against a stubbed workspace: the fixture's branch names are not
+    // this repo's, so the ranks have to be handed to it
+    const at = (...names) =>
+        new Map(names.map((name, depth) => [name, { stack: 0, depth }]))
+    const promoted = (where) =>
+        api.livePlans(plans, where).map((l) => [l.plan.title, l.stage?.name, l.branch])
+    const dirPlan = by("A plan in a directory")
+    const tasked = by("A plan with tasks")
+    const taskRows = await rowsOf("A plan with tasks")
+    const archive = top.at(-1)
+    const archived = await tree.getChildren(archive)
+    const stageRows = await rowsOf("A plan in a directory")
+
+    const cases = [
+        [plans.length, 17, "17 plans: twelve filler, four files of their own and one directory — and never the .patch"],
+        [plans[0].title, "A plan in a directory", "newest first, and a directory is dated by the newest file in it"],
+        [top.length, 13, "twelve rows and an archive row"],
+        [archive.label, "5 older plans", "the archive says how many it holds"],
+        [archived.length, 5, "and holds them"],
+        [dirPlan.stages.map((s) => s.name).join(" "), "phase-1.md phase-2.md phase-3.md", "phases in the order the overview links them, ./ and #anchor and all"],
+        [dirPlan.docs.map((d) => d.name).join(" "), "notes.md", "a file the overview never links is a document, and the overview is neither"],
+        [api.planProgress(dirPlan), "2/3", "progress counts phases, not the files beside them"],
+        [stageRows.map((r) => r.iconPath.id).join(" "), "pass-filled pass-filled circle-outline file", "a phase is ticked as its overview ticks it; a document has no tick to show"],
+        [stageRows[0].label, "Phase 1: the first", "a phase row is titled by its own file"],
+        [tasked.tasks.length, 3, "a checklist quoted inside a fence is somebody else's plan"],
+        [api.planProgress(tasked), "1/3", "a checklist is how a single-file plan writes its phases"],
+        [taskRows.map((r) => r.iconPath.id).join(" "), "pass-filled circle-outline circle-outline", "and it expands to them, ticked as it ticks them"],
+        [tasked.preview, "The opening paragraph, which is what the tooltip shows.", "the tooltip gets the opening paragraph"],
+        [api.planRows(by("Sections only")).length, 0, "a plan whose only structure is its sections gets no children"],
+        [by("Nothing under here") && api.planRows(by("Nothing under here")).length, 0, "and neither does one with no structure at all"],
+        [top.find((r) => r.label === "A plan with tasks").command.arguments[2], "2026-02-01-with-tasks.md", "a plan row's click names the row to open, so the phases come with the file"],
+        [stageRows[0].command.arguments[2], undefined, "a phase row has nothing to open, so it names none"],
+        [path.basename(dirPlan.path), "2026-02-05-dir", "a directory plan is the directory, which is what deleting it takes"],
+        [path.basename(tasked.path), "2026-02-01-with-tasks.md", "a single-file plan is its file"],
+        [archived[0].contextValue, "plan", "an archived row is a plan row, hover button and all"],
+        [tasked.branches.join(" "), "with-tasks and-another", "a plan reads the branches under its title"],
+        [tasked.preview, "The opening paragraph, which is what the tooltip shows.", "and the header is not its prose"],
+        [by("Nothing under here").branches.join(" "), "bare", "`·` separates header keys as a newline does, and backticks are not part of a name"],
+        [linked("with-tasks").length, 1, "a single-file plan is one entry"],
+        [linked("with-tasks")[0].stage, undefined, "with no phase, because it has none"],
+        [linked("second-phase")[0]?.stage.name, "phase-2.md", "a phase is indexed under its own branch"],
+        [linked("second-phase")[0]?.plan.name, "2026-02-05-dir", "and carries the plan it is a phase of"],
+        [linked("whole-plan").length, 1, "an overview's own branch is the plan"],
+        [linked("whole-plan")[0].stage, undefined, "and has no phase to point at"],
+        [linked("first-phase").length, 1, "a branch named by both the overview and a phase resolves once"],
+        [linked("first-phase")[0]?.stage.name, "phase-1.md", "to the phase, which says where in the plan the work is"],
+        [linked("no-such-branch").length, 0, "a branch nothing names has no plan"],
+        [branchRows("second-phase").map((r) => r.label).join(" | "), "Phase 2: the second | Phase 3: the third", "two phases on one branch is two rows, in the order the overview lists them"],
+        [branchRows("second-phase")[0]?.description, "A plan in a directory", "a phase row names the plan it is a phase of"],
+        [new Set(branchRows("second-phase").map((r) => r.id)).size, 2, "and the rows are told apart, so one plan under two branches is two rows"],
+        [branchRows("second-phase")[0]?.collapsibleState, 0, "a phase's own children belong to the Plans view"],
+        [branchRows("with-tasks")[0]?.label, "A plan with tasks", "a whole plan is one row, titled by the plan"],
+        [branchRows("with-tasks")[0]?.description, "1/3", "with its progress, since here the plan is not missing its context"],
+        [branchRows("no-such-branch").length, 0, "a branch with no plan gets no row"],
+        [JSON.stringify(promoted(at("second-phase"))), '[["A plan in a directory","phase-2.md","second-phase"]]', "an applied branch pins its plan, named by the phase that claims it"],
+        [JSON.stringify(promoted(at("first-phase"))), '[["A plan in a directory","phase-1.md","first-phase"]]', "a branch its overview also names still resolves to the phase"],
+        [JSON.stringify(promoted(at("whole-plan"))), '[["A plan in a directory",null,"whole-plan"]]', "and a branch only the overview names pins the plan with no phase"],
+        [promoted(at("second-phase", "with-tasks")).map((l) => l[0]).join(" | "), "A plan in a directory | A plan with tasks", "pinned in the order the Branches view puts their branches in"],
+        [promoted(at("with-tasks", "second-phase")).map((l) => l[0]).join(" | "), "A plan with tasks | A plan in a directory", "which is the only thing that decides it, not recency"],
+        [promoted(new Map()).length, 0, "nothing applied pins nothing"],
+        [api.liveBranch(["second-phase", "first-phase"], at("second-phase", "first-phase"))?.branch, "second-phase", "of several applied, the one nearest the top of its stack"],
+        [api.planItem(dirPlan, api.livePlans(plans, at("second-phase"))[0]).description, "2/3  \u00b7  second-phase", "a pinned row says its branch where it said an age"],
+        [api.planItem(dirPlan, api.livePlans(plans, at("second-phase"))[0]).command.arguments[0].endsWith("phase-2.md"), true, "and opens the phase you are on"],
+        [api.planItem(dirPlan).command.arguments[0].endsWith("overview.md"), true, "while an unpinned one opens its overview"],
+        [stageRows[0].description, "first-phase", "a phase row carries its own branch"],
+        [by("No title of its own")?.name, "2026-02-04-no-title-of-its-own.md", "a plan with no heading is named by its file, less the date"],
+    ]
+    const bad = cases.filter(([got, want]) => got !== want)
+    for (const [got, want, what] of bad)
+        console.log(`PROBLEM  plans: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (bad.length) process.exitCode = 1
+
+    // the two writes, which are the only thing here that touches a file
+    const read = (rel) => fs.readFileSync(path.join(dir, rel), "utf8")
+    await api.writePlanLink(path.join(dir, "2026-02-02-sections-only.md"), ["fresh"])
+    await api.writePlanLink(path.join(dir, "2026-02-01-with-tasks.md"), ["moved"])
+    await api.writePlanLink(path.join(dir, "2026-02-03-bare.md"), ["moved"])
+    const made = await api.createPlan(fixture, "A plan the picker made", "made-up")
+    fs.appendFileSync(made, "edited by hand\n")
+    const again = await api.createPlan(fixture, "A plan the picker made", "made-up")
+    const writes = [
+        [read("2026-02-02-sections-only.md").split("\n").slice(0, 4).join("|"), "# Sections only||Branch: fresh|", "a plan with no header gets one under its title"],
+        [read("2026-02-01-with-tasks.md").split("\n")[2], "Branch: moved", "a plan that had one has it rewritten in place"],
+        [read("2026-02-01-with-tasks.md").split("\n")[4], "The opening paragraph, which is what the tooltip shows.", "and its prose is left alone"],
+        [read("2026-02-03-bare.md").split("\n")[2], "Branch: moved \u00b7 Base: master \u00b7 Started: 2026-02-03", "only the Branch segment of a one-line header is rewritten"],
+        [path.basename(made), `${new Date().toISOString().slice(0, 10)}-a-plan-the-picker-made.md`, "a new plan is named by its title under today's date"],
+        [again, made, "and making it twice is the same file"],
+        [fs.readFileSync(made, "utf8").endsWith("edited by hand\n"), true, "with what the first one wrote still in it"],
+    ]
+    for (const [got, want, what] of writes.filter(([got, want]) => got !== want)) {
+        console.log(`PROBLEM  plans: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+        process.exitCode = 1
+    }
+
+    // a repo with no plans directory, which is the case that hides the view.
+    // Asked of a directory of its own rather than of this run's cwd, since smoke
+    // has to run inside a GitButler workspace and that workspace may well keep
+    // plans of its own
+    const bare = path.join(fixture, "bare")
+    fs.mkdirSync(bare)
+    const none = await api.plansRoot(bare)
+    if (none !== undefined) {
+        console.log(`PROBLEM  plans: a repo with no plans/ gave ${none}`)
+        process.exitCode = 1
+    }
+    stub.workspace.workspaceFolders[0].uri.fsPath = was
+    fs.rmSync(fixture, { recursive: true, force: true })
+    console.log(
+        `ok: plans — ${cases.length + writes.length} cases over ${plans.length} fixture plans; ${top.length} rows, ${dirPlan.stages.length} phases and ${dirPlan.docs.length} document in the directory plan, and the view hides without a plans/`
+    )
+}
+
 // mirror what BranchTree.topLevel attaches before building rows
 const fileMap = await api.branchFiles(root, stacks)
 for (const s of stacks)

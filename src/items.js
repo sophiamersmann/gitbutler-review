@@ -4,7 +4,7 @@
 const vscode = require("vscode")
 const path = require("path")
 const { ago, uri } = require("./exec")
-const { allReviewed, ciState, commitsKey, entriesIn, filesKey, folderKey, humanDecision, hunkLine, hunkRange, isDemoted, layoutFor, lineRange, openThreads, reviewOf, rollup, stackName } = require("./model")
+const { allReviewed, ciState, commitsKey, entriesIn, filesKey, folderKey, humanDecision, hunkLine, hunkRange, isDemoted, layoutFor, lineRange, openThreads, planProgress, planRows, reviewOf, rollup, stackName } = require("./model")
 
 const BASE = "butbase" // butbase:/<path>?<ref>    — the file as of a ref, read-only
 
@@ -327,8 +327,16 @@ function stackItem(stack) {
         stack.label &&
             `Renamed — the commits say \`${stackName({ ...stack, label: undefined })}\`.`,
     ].filter(Boolean)
+    const plan = onePlanAcross(stack.branches)
     item.tooltip = new vscode.MarkdownString(
-        [...head, "", ...stack.branches.map((b) => `- ${b.name}`)].join("\n")
+        [
+            ...head,
+            // only when the branches agree. With two plans in a stack, naming
+            // either one here would be a claim about the other
+            ...(plan ? [plan.title] : []),
+            "",
+            ...stack.branches.map((b) => `- ${b.name}`),
+        ].join("\n")
     )
     item.contextValue = "stack"
     item.stack = stack
@@ -357,6 +365,10 @@ function branchItem(branch, overrides) {
                 ? ""
                 : `${branch.fileCount} file${branch.fileCount === 1 ? "" : "s"} changed`,
             `Compared against \`${branch.base}\``,
+            ...(branch.plans ?? []).map(
+                ({ plan, stage }) =>
+                    `${plan.title}${stage ? ` \u00b7 ${stage.title}` : ""}`
+            ),
             "",
             ...(branch.commits ?? []).map((c) => `- ${c.subject}`),
         ]
@@ -592,4 +604,119 @@ function churn(hunks) {
     return `+${adds} −${dels}`
 }
 
-module.exports = { BASE, FILE, PR, DECORATION, hunkKind, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, filesGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }
+/** A plan: the title it gives itself, how far through it is, and when it was
+ *  last touched. The tooltip carries the opening paragraph, which is most of
+ *  what tells two plans on the same topic apart. */
+function planItem(plan, live) {
+    const item = new vscode.TreeItem(
+        plan.title,
+        planRows(plan).length
+            ? vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.None
+    )
+    item.id = `plan:${plan.name}`
+    // an age is what a plan has instead of a branch, not as well as one
+    item.description = [planProgress(plan), live ? live.branch : ago(plan.mtime)]
+        .filter(Boolean)
+        .join("  \u00b7  ")
+    item.iconPath = new vscode.ThemeIcon("checklist")
+    item.tooltip = new vscode.MarkdownString(
+        [
+            `**${plan.title}**`,
+            `\`${plan.name}\` \u00b7 ${ago(plan.mtime)}`,
+            plan.preview && `\n${plan.preview}`,
+        ]
+            .filter(Boolean)
+            .join("  \n")
+    )
+    // the phase you are on, not line 1 of a 476-line overview
+    item.command = openPlan(live?.stage?.file ?? plan.file, 0, plan.name)
+    item.contextValue = "plan"
+    item.plan = plan
+    return item
+}
+
+/** One phase of a plan directory, ticked exactly as its overview ticks it. A
+ *  file the overview never links has no tick to show: it is a document in the
+ *  plan rather than a phase of it, and the plain glyph is what says so. */
+function planStageItem(stage, plan, applied) {
+    const item = new vscode.TreeItem(stage.title)
+    item.id = `plan:${plan.name}:${stage.name}`
+    item.description = stage.branches.join(", ")
+    item.iconPath = new vscode.ThemeIcon(
+        stage.done === undefined ? "file" : tick(stage.done),
+        applied ? new vscode.ThemeColor("butReview.branchIcon") : undefined
+    )
+    item.tooltip = new vscode.MarkdownString(
+        [`**${stage.title}**`, `\`${stage.name}\``, stage.preview && `\n${stage.preview}`]
+            .filter(Boolean)
+            .join("  \n")
+    )
+    item.command = openPlan(stage.file, 0)
+    item.contextValue = "planStage"
+    item.stage = stage
+    item.plan = plan
+    return item
+}
+
+/** What a branch row shows of its plan: the whole plan, or the phase of one that
+ *  the branch is. Drawn by the Plans view's own builders. The description is the
+ *  one thing this view adds, since here a phase arrives without its plan around
+ *  it. */
+function planLinkItem({ plan, stage }, branch) {
+    const item = stage ? planStageItem(stage, plan) : planItem(plan)
+    item.id = `plan:${branch.name}:${plan.name}:${stage?.name ?? ""}`
+    // its phases belong to the plan, not to this branch
+    item.collapsibleState = vscode.TreeItemCollapsibleState.None
+    item.description = stage ? plan.title : planProgress(plan)
+    item.contextValue = "planLink"
+    return item
+}
+
+function planTaskItem(task, plan) {
+    const item = new vscode.TreeItem(task.text)
+    item.id = `plan:${plan.name}:task:${task.line}`
+    item.description = `L${task.line + 1}`
+    item.iconPath = new vscode.ThemeIcon(tick(task.done))
+    item.command = openPlan(plan.file, task.line)
+    return item
+}
+
+/** The archive, last and collapsed, for the reason Unplaced is: the rows above
+ *  it are the ones you skim. */
+function olderPlansItem(plans) {
+    const item = new vscode.TreeItem(
+        `${plans.length} older plans`,
+        vscode.TreeItemCollapsibleState.Collapsed
+    )
+    item.id = "plans:older"
+    item.iconPath = new vscode.ThemeIcon("archive")
+    item.tooltip =
+        "Everything the rows above left over, newest first. Once you are this far down, text search is the faster way in."
+    item.plans = plans
+    return item
+}
+
+/** The plan a whole stack is, when its branches name one and only one. */
+function onePlanAcross(branches) {
+    const plans = new Map(
+        branches.flatMap((b) => b.plans ?? []).map(({ plan }) => [plan.name, plan])
+    )
+    return plans.size === 1 ? [...plans.values()][0] : undefined
+}
+
+// Icons rather than checkboxes: nothing here writes to your files, and a box
+// that looks like the ones in the Branches view but does nothing would be worse
+// than no box at all.
+const tick = (done) => (done ? "pass-filled" : "circle-outline")
+
+/** `expand` names the plan whose row this is, and only a plan row passes one:
+ *  clicking a plan opens its phases as well as its file, since half of what the
+ *  row is for is underneath it. Its own twistie still closes it. */
+const openPlan = (file, line, expand) => ({
+    command: "butReview.openPlan",
+    title: "Open Plan",
+    arguments: [file, line, expand],
+})
+
+module.exports = { BASE, FILE, PR, DECORATION, hunkKind, planItem, planLinkItem, planStageItem, planTaskItem, olderPlansItem, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, filesGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }

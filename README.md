@@ -4,7 +4,7 @@ A VSCode extension for reviewing [GitButler](https://gitbutler.com) stacks. GitB
 applies every active branch to the working tree at once, which the built-in Git tooling
 doesn't account for.
 
-It covers three things:
+It covers four things:
 
 - **Reviewing one branch's diff** against the branch below it in its stack, in a pane you
   can edit. Or the whole stack at once, against the target branch.
@@ -12,6 +12,7 @@ It covers three things:
   committing, and catch the ones that would land somewhere arbitrary.
 - **Tracking your pull requests** across stacks, with one status per PR combining CI,
   review decision, and unresolved threads.
+- **Finding the plan you are working from**, in a directory the rest of VSCode can't see.
 
 ## Why it exists
 
@@ -32,6 +33,12 @@ Applied stacks, sorted by recent activity, with each branch row showing its CI s
 and age. A stack is named from the `(topic)` convention in commit subjects, falling back
 to the common prefix of its branch names. Click a file to open the diff, or tick it off
 once reviewed.
+
+**A branch opens with its plan**, above the commits and the files: the plan the branch is,
+or the phase of one it is, drawn as the Plans view draws it and clicking through to the same
+file. A branch that carries two phases gets a row each, in the order its plan lists them. It
+comes from the `Branch:` line documented under [Plans](#plans), which is also what
+`Link plan…` on the branch row writes for you. Most branches have no plan and get no row.
 
 Ticks are stored per repo and survive a reload, but clear as soon as the branch's version
 of a file changes — absorbing an edit into a file you'd already reviewed un-ticks it.
@@ -98,6 +105,89 @@ through those hunks, skipping the rest and wrapping at either end, with the bran
 position in the status bar (`hunk 3 of 7`). Outside a review diff the keys keep their
 built-in meaning. If every line the branch touched has been rewritten above it, the keys
 report that instead.
+
+### Plans
+
+The markdown files in `plans/`, newest first, with everything past the first screen behind
+one row. It exists because that directory is invisible to everything else: `plans/` is
+gitignored, VSCode's search skips ignored files by default, so a plan is in neither the
+Source Control view nor Ctrl+Shift+F.
+
+Rows are titled by the plan's own `#` heading rather than its filename, so
+`2026-08-25-legend-emphasis-props.md` reads "Make emphasis a legend render prop, drop the
+observer decorator from the legends". The tooltip carries its opening paragraph, which is
+most of what tells two plans on the same topic apart.
+
+**A plan whose branch is applied is pinned to the top**, in the order the Branches view
+puts those branches in, and says that branch where it would otherwise say its age. That is
+the whole of what the `Branch:` line below buys, and it is derived: a plan is live because a
+branch it names is applied right now, so merging a branch archives its own plan with nothing
+to update. Clicking a pinned plan opens the phase you are on rather than line 1 of a
+476-line overview.
+
+**Then twelve rows, then `N older plans`.** A count rather than a date: mtime gets reset
+wholesale by a copy — 25 of the 54 plans this was written against share one — so a "touched
+this week" cut would be measuring the last bulk copy rather than the work. A count also
+keeps the view one screen tall whatever the directory holds, and a pinned plan comes out of
+that budget rather than on top of it. The archive is flat and newest-first; that far down,
+text search is the faster way in.
+
+**The `Branch:` line is the whole convention.** One line under a plan's title, naming the
+GitButler branch the work lands on, comma-separated for more than one:
+
+```markdown
+# Bespoke metadata box, optional provenance
+
+Branch: bespoke-metadata-box, share-metadata-box-parts
+```
+
+In a plan directory it goes in the **stage file**, under that file's own title, because a
+13-phase plan is usually several branches and the phase is the level a branch corresponds
+to. The overview needs nothing added. `Branch: … · Base: … · Started: …` on one line works
+too, which is what the review-findings plans already write. Nothing guesses: matching a
+plan's filename against 890 branch names found 2 that were right and several that were
+confidently wrong, so an unlinked plan simply sorts by recency as it always did.
+
+`go` and `gooo` write the line as each phase lands. Otherwise `Link plan…` on a branch row
+picks the plan, `Link plan…` on a plan or phase row picks the branch, and `New plan…` on a
+branch row starts one already linked. The picker puts the closest filename first under a
+separator that says it is a guess.
+
+A **directory is one plan**, not a row per file. It takes its title and its phases from
+`overview.md` or `README.md`, where a phase is a `.md` file the overview links to, in the
+order it links them, ticked by the `- [x]` that links it:
+
+```markdown
+## Phases
+
+- [x] [Phase 1: the `BespokeMetadata` type](phase-1-type.md)
+- [ ] [Phase 11: the ETL export step](phase-11-etl-step.md)
+```
+
+So `11/13` on the row is the overview's own count, and no convention had to be invented to
+read it. Files the overview never links — `testing.md`, `design-fixes.md` — come after the
+phases without a tick: documents in the plan rather than phases of it.
+
+A single-file plan writes the same thing as a plain checklist, and expands to it the same
+way. A plan that lists no phases has no children at all: its `##`s are the shape of the
+document rather than the shape of the work, and a row per section is a table of contents
+nobody asked for. Checklists quoted inside fenced code blocks aren't counted either — plans
+about plans would otherwise be full of somebody else's phases.
+
+Clicking a plan opens its file **and** its phases. They are half of what the row is for,
+and a click that opened only the document left them behind the twistie; the twistie still
+closes the row again.
+
+**Delete Plan**, on hover, takes a directory plan as the whole directory. It goes to the trash rather than being unlinked — `plans/` is gitignored,
+so no history could give one back — and the trash is why it doesn't stop to ask.
+
+Nothing here writes to your files unless you ask it to, which is why the ticks are icons
+rather than checkboxes: ticking one would mean writing `- [x]` back into a file an agent may
+be editing in the same second, and for a directory plan, writing to the overview from a row
+rendered out of it.
+
+The view is hidden unless the directory exists, and `butReview.plansDirectory` says which
+one to look for.
 
 ### Changes
 
@@ -183,6 +273,7 @@ On Linux or Windows that prepend is harmless, but you may need to adjust it if `
 | `butReview.ignoredChecks` | `[]` | CI checks to exclude from a branch's status, matched as case-insensitive substrings. Useful for a slow or flaky job you never act on. |
 | `butReview.botReviewers` | `chatgpt-codex-connector`, `github-actions`, `copilot-pull-request-reviewer` | Reviewers whose approvals and comments don't count. Logins ending in `[bot]` are always ignored; Codex has no such suffix, hence this list. |
 | `butReview.fileLayout` | `tree` | `list` or `tree`. Overridable per branch from the branch row. |
+| `butReview.plansDirectory` | `plans` | Where plan files live, relative to the repo root. Empty hides the Plans view. |
 | `butReview.demoteBranches` | `["docs", "debug"]` | Stacks whose every branch matches one of these hyphen-separated tokens sort to the bottom regardless of activity. |
 
 Six theme colours are contributed under `butReview.*` for retuning the icons, the
@@ -200,7 +291,9 @@ declared, the container icon exists. None of that is visible to JS testing — a
 declared but never registered renders as a working button bound to nothing.
 
 It then builds every tree row against your live GitButler workspace with a stubbed
-`vscode` module. This has caught a TDZ crash, a whole view deleted by a bad edit, hunk
+`vscode` module. The plans rows are the exception — they build against a temporary fixture,
+since they need no workspace and this repo keeps no `plans/` of its own, which is why that
+section runs first. This has caught a TDZ crash, a whole view deleted by a bad edit, hunk
 parsing broken by `diff.external`, and a dead absorb button, none of which `node --check`
 saw. Run it after any change.
 
@@ -211,6 +304,7 @@ extension.js      wiring: providers, decorations, commands
 src/exec.js       subprocess plumbing
 src/git.js        everything asked of git
 src/but.js        everything asked of the `but` and `gh` CLIs
+src/plans.js      everything asked of the plans directory
 src/model.js      pure derivations — CI, reviews, stack names, layout
 src/items.js      every TreeItem the views render
 src/trees.js      the three TreeDataProviders

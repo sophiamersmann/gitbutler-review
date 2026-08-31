@@ -6,8 +6,9 @@ const { stacksOf, status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
 const { BASE, DECORATION, FILE, PR } = require("./src/items")
-const { committedMode, layoutKey, nextHunk, stackKey, stackKeys, stackName } = require("./src/model")
-const { BranchTree, PrTree, UncommittedTree } = require("./src/trees")
+const { committedMode, layoutKey, nextHunk, sharedWords, stackKey, stackKeys, stackName } = require("./src/model")
+const { createPlan, listPlans, plansRoot, writePlanLink } = require("./src/plans")
+const { BranchTree, PlanTree, PrTree, UncommittedTree } = require("./src/trees")
 
 function activate(context) {
     // workspaceState, so ticks and layout overrides are per-repo and survive a
@@ -54,7 +55,48 @@ function activate(context) {
     const dirtyView = vscode.window.createTreeView("butReview.uncommitted", {
         treeDataProvider: dirty,
     })
+    const plans = new PlanTree()
+    const plansView = vscode.window.createTreeView("butReview.plans", {
+        treeDataProvider: plans,
+    })
     let refreshTimer
+    let plansTimer
+    let plansWatcher
+
+    // Hidden without a plans directory, since `plans/` is one person's
+    // convention rather than a GitButler one.
+    const syncPlans = async () => {
+        const root = repoRoot()
+        vscode.commands.executeCommand(
+            "setContext",
+            "butReview.hasPlans",
+            root ? !!(await plansRoot(root)) : false
+        )
+    }
+
+    // Its own watcher and its own timer, repainting the two views that read
+    // plans and neither of the other two. Agents write plans in bursts, hence
+    // the same debounce as the rest.
+    function watchPlans() {
+        plansWatcher?.dispose()
+        const root = repoRoot()
+        const dir = cfg().get("plansDirectory", "plans")
+        if (!root || !dir) return
+        plansWatcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(root, `${dir}/**`)
+        )
+        const touched = () => {
+            clearTimeout(plansTimer)
+            plansTimer = setTimeout(() => {
+                plans.refresh()
+                tree.refresh()
+                syncPlans()
+            }, 500)
+        }
+        plansWatcher.onDidCreate(touched)
+        plansWatcher.onDidChange(touched)
+        plansWatcher.onDidDelete(touched)
+    }
 
     // The view is hidden while the tree is clean, so nothing renders an empty
     // box — which means its own getChildren can't be what discovers the state.
@@ -263,6 +305,8 @@ function activate(context) {
 
     syncVisibility()
     syncMode()
+    syncPlans()
+    watchPlans()
 
     function refreshAll() {
         // every trigger below can arrive right after a `but` write of our own
@@ -273,6 +317,7 @@ function activate(context) {
             if (doc.uri.scheme === BASE) baseChanged.fire(doc.uri)
         tree.refresh()
         dirty.refresh()
+        plans.refresh()
         // A PR row's CI circle comes from `but status`, which the two views
         // above just read — so repaint it for free. `changed.fire()`, not
         // `refresh()`: the reviews and threads behind it are network, and
@@ -403,7 +448,108 @@ function activate(context) {
             tree.refresh()
         }),
         vscode.window.registerTreeDataProvider("butReview.prs", prs),
+        plansView,
         dirtyView,
+        { dispose: () => plansWatcher?.dispose() },
+
+        // the directory is a setting, so the watcher and the view's visibility
+        // both have to follow it rather than the value read at activation
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (!e.affectsConfiguration("butReview.plansDirectory")) return
+            watchPlans()
+            syncPlans()
+            plans.refresh()
+        }),
+
+        vscode.commands.registerCommand(
+            "butReview.openPlan",
+            async (file, line = 0, expand) => {
+                // A plan row opens its phases as well as its file: they are half
+                // of what the row is for, and a click that opened only the
+                // document left them behind the twistie. Before the editor, so
+                // it is still the tree that has focus. `select` and `focus` off
+                // — the row was clicked, so it is already both.
+                const node = expand && plans.rowFor.get(expand)
+                if (node)
+                    await Promise.resolve(
+                        plansView.reveal(node, {
+                            expand: true,
+                            select: false,
+                            focus: false,
+                        })
+                    ).catch(() => {}) // a row the tree has since rebuilt
+                const doc = await vscode.workspace.openTextDocument(
+                    vscode.Uri.file(file)
+                )
+                const at = new vscode.Position(line, 0)
+                await vscode.window.showTextDocument(doc, {
+                    selection: new vscode.Range(at, at),
+                })
+            }
+        ),
+
+        // To the trash rather than unlinked: `plans/` is gitignored, so a plan
+        // deleted here is in no history that could give it back.
+        vscode.commands.registerCommand("butReview.deletePlan", async (node) => {
+            const plan = node.plan
+            try {
+                await vscode.workspace.fs.delete(vscode.Uri.file(plan.path), {
+                    recursive: true,
+                    useTrash: true,
+                })
+                plans.refresh()
+                vscode.window.showInformationMessage(
+                    `Deleted ${plan.name}. It is in the trash.`
+                )
+            } catch (e) {
+                vscode.window.showErrorMessage(`but-review: ${e.message}`)
+            }
+        }),
+
+        // The link is a line in the plan file, so both directions are a write to
+        // it. Which picker you get is which end you started from.
+        vscode.commands.registerCommand("butReview.linkPlan", async (node) => {
+            try {
+                const root = repoRoot()
+                const branch = node.branch
+                    ? node.branch.name
+                    : await pickBranch(await status(root))
+                if (!branch) return
+                const file = node.branch
+                    ? await pickPlan(await listPlans(root), branch)
+                    : (node.stage ?? node.plan).file
+                if (!file) return
+                await writePlanLink(file, [branch])
+                plans.refresh()
+                tree.refresh()
+            } catch (e) {
+                vscode.window.showErrorMessage(`but-review: ${e.message}`)
+            }
+        }),
+
+        vscode.commands.registerCommand("butReview.newPlan", async (node) => {
+            try {
+                const root = repoRoot()
+                const branch = node?.branch?.name
+                const title = await vscode.window.showInputBox({
+                    title: "New plan",
+                    value: branch?.replace(/-/g, " ") ?? "",
+                    prompt: "The title names the file, so say what the plan is rather than which branch it is on.",
+                })
+                if (!title?.trim()) return
+                const file = await createPlan(root, title.trim(), branch)
+                plans.refresh()
+                tree.refresh()
+                await vscode.commands.executeCommand("butReview.openPlan", file)
+            } catch (e) {
+                vscode.window.showErrorMessage(`but-review: ${e.message}`)
+            }
+        }),
+
+        vscode.commands.registerCommand("butReview.refreshPlans", () => {
+            plans.refresh()
+            syncPlans()
+        }),
 
         // A stack has no name of its own, so the one shown is read off the
         // `(topic)` its branches' commits agree on — and when that reading is
@@ -785,6 +931,58 @@ function activate(context) {
             }
         })
     )
+}
+
+/** Which applied branch a plan is for. Separators, as `amendInto` builds them,
+ *  because a workspace of several stacks is a long flat list otherwise. */
+function pickBranch(st) {
+    const picks = st.stacks.flatMap((s) => [
+        { label: s.branches[0].name, kind: vscode.QuickPickItemKind.Separator },
+        ...s.branches.map((b) => ({ label: b.name })),
+    ])
+    return vscode.window
+        .showQuickPick(picks, { title: "Which branch is this plan for?" })
+        .then((pick) => pick?.label)
+}
+
+/** Which plan a branch is, or which phase of one. The closest filename goes
+ *  first, under a separator that says it is a guess, and everything else follows
+ *  newest first. */
+async function pickPlan(plans, branch) {
+    const targets = plans.flatMap((plan) => [
+        { plan, label: plan.title, description: plan.name, file: plan.file },
+        ...plan.stages.map((stage) => ({
+            plan,
+            label: stage.title,
+            description: plan.title,
+            file: stage.file,
+        })),
+    ])
+    const closest = targets
+        .map((target) => ({
+            target,
+            words: sharedWords(branch, path.basename(target.file)),
+        }))
+        .filter((scored) => scored.words > 0)
+        .sort((a, b) => b.words - a.words)[0]?.target
+    const separator = (label) => ({
+        label,
+        kind: vscode.QuickPickItemKind.Separator,
+    })
+    const picks = closest
+        ? [
+              separator("closest to the branch name"),
+              closest,
+              separator("every plan, newest first"),
+              ...targets.filter((t) => t !== closest),
+          ]
+        : targets
+    const pick = await vscode.window.showQuickPick(picks, {
+        title: `Which plan is \`${branch}\`?`,
+        matchOnDescription: true,
+        placeHolder: "A phase of a plan, or the plan itself",
+    })
+    return pick?.file
 }
 
 module.exports = { activate }

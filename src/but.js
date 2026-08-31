@@ -10,11 +10,15 @@ const { changedLines, isDemoted, stackLabel } = require("./model")
 let statusCache = { at: 0, value: undefined }
 
 function status(root) {
-    if (Date.now() - statusCache.at > 2000)
+    if (Date.now() - statusCache.at > 2000) {
         statusCache = {
             at: Date.now(),
             value: run("but", ["status", "-f", "--json"], root).then(JSON.parse),
         }
+        // A failure is not worth holding. The next read is the one that might
+        // work, and every caller has to handle a rejection anyway.
+        statusCache.value.catch(() => status.invalidate())
+    }
     return statusCache.value
 }
 
