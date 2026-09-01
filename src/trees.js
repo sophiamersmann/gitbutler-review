@@ -5,7 +5,7 @@ const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but
 const { listPlans } = require("./plans")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
-const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, filesGroupItem, fileItem, folderItem, hunkItem, planItem, planLinkItem, planStageItem, planTaskItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
+const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, filesGroupItem, fileItem, folderItem, hunkItem, planItem, planLinkItem, planStageItem, planTaskItem, plansGroupItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
 const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, layoutFor, livePlans, planIndex, planRows, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
@@ -99,6 +99,10 @@ class BranchTree extends Tree {
             // the branch's whole diff every time you expanded a directory
             if (node.folder)
                 return this.rows(node.folder.node, node.folder.branch)
+            if (node.plansOf)
+                return node.plansOf.plans.map((link) =>
+                    planLinkItem(link, node.plansOf)
+                )
             if (node.commitsOf) {
                 const open = this.openCommit.get(commitsKey(node.commitsOf))
                 return node.commitsOf.commits.map((c) =>
@@ -120,10 +124,13 @@ class BranchTree extends Tree {
                 )
 
             // the plan comes before the diff, as the whole-stack row comes
-            // before the branches it reads
-            const plans = (node.branch.plans ?? []).map((link) =>
-                planLinkItem(link, node.branch)
-            )
+            // before the branches it reads — but folded once there is more than
+            // one, so the diff is not pushed down the screen by paperwork
+            const links = node.branch.plans ?? []
+            const plans =
+                links.length > 1
+                    ? [plansGroupItem(node.branch)]
+                    : links.map((link) => planLinkItem(link, node.branch))
             // a branch of one commit is that commit, so a commits row would
             // lead to the file list it sits on, and the file list needs no row
             // of its own to fold against

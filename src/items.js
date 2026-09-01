@@ -671,6 +671,30 @@ function planLinkItem({ plan, stage }, branch) {
     return item
 }
 
+/** The plan rows a branch carries, folded into one. A branch that is three phases
+ *  of a plan opens with three rows above its diff, which is the diff pushed off
+ *  the screen by its own paperwork. */
+function plansGroupItem(branch) {
+    const links = branch.plans
+    const phases =
+        new Set(links.map(({ plan }) => plan.name)).size === 1 &&
+        links.every(({ stage }) => stage)
+    const item = new vscode.TreeItem(
+        `${links.length} ${phases ? "phases" : "plans"}`,
+        vscode.TreeItemCollapsibleState.Collapsed
+    )
+    item.id = `plans:${branch.name}`
+    if (phases) item.description = links[0].plan.title
+    item.iconPath = new vscode.ThemeIcon("checklist")
+    item.tooltip = new vscode.MarkdownString(
+        phases
+            ? `**${links[0].plan.title}** — ${links.length} phases on this branch`
+            : `${links.length} plans name this branch`
+    )
+    item.plansOf = branch
+    return item
+}
+
 function planTaskItem(task, plan) {
     const item = new vscode.TreeItem(task.text)
     item.id = `plan:${plan.name}:task:${task.line}`
@@ -707,4 +731,4 @@ const openPlan = (file, line, expand) => ({
     arguments: [file, line, expand],
 })
 
-module.exports = { BASE, FILE, PR, DECORATION, hunkKind, planItem, planLinkItem, planStageItem, planTaskItem, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, filesGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, PR, DECORATION, hunkKind, planItem, planLinkItem, planStageItem, planTaskItem, plansGroupItem, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, filesGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }

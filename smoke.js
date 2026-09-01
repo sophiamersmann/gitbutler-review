@@ -307,6 +307,8 @@ const overrides = new Map()
     // branch shows are built from the index rather than from a workspace
     const branchRows = (name) =>
         linked(name).map((link) => api.planLinkItem(link, { name }))
+    const folded = (name) =>
+        api.plansGroupItem({ name, plans: linked(name) })
     // promotion, against a stubbed workspace: the fixture's branch names are not
     // this repo's, so the ranks have to be handed to it
     const at = (...names) =>
@@ -355,6 +357,10 @@ const overrides = new Map()
         [branchRows("second-phase")[0]?.description, "A plan in a directory", "a phase row names the plan it is a phase of"],
         [new Set(branchRows("second-phase").map((r) => r.id)).size, 2, "and the rows are told apart, so one plan under two branches is two rows"],
         [branchRows("second-phase")[0]?.collapsibleState, 0, "a phase's own children belong to the Plans view"],
+        [folded("second-phase").label, "2 phases", "more than one plan row folds into a row that counts them"],
+        [folded("second-phase").description, "A plan in a directory", "named by the plan they are phases of, since the phases inside say the rest"],
+        [folded("second-phase").plansOf.plans.length, 2, "and it carries them, so opening it costs no second lookup"],
+        [api.plansGroupItem({ name: "mixed", plans: [...linked("with-tasks"), ...linked("whole-plan")] }).label, "2 plans", "two plans rather than two phases of one are plans"],
         [branchRows("with-tasks")[0]?.label, "A plan with tasks", "a whole plan is one row, titled by the plan"],
         [branchRows("with-tasks")[0]?.description, "1/3", "with its progress, since here the plan is not missing its context"],
         [branchRows("no-such-branch").length, 0, "a branch with no plan gets no row"],

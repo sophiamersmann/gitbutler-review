@@ -40,9 +40,10 @@ once reviewed.
 
 **A branch opens with its plan**, above the commits and the files: the plan the branch is,
 or the phase of one it is, drawn as the Plans view draws it and clicking through to the same
-file. A branch that carries two phases gets a row each, in the order its plan lists them. It
-comes from the `Branch:` line documented under [Plans](#plans), which is also what
-`Link plan…` on the branch row writes for you. Most branches have no plan and get no row.
+file. Carry more than one and they fold into a `3 phases` row instead, collapsed — a branch
+that is most of a plan would otherwise push its own diff off the screen. It comes from the
+`Branch:` line documented under [Plans](#plans), which is also what `Link plan…` on the
+branch row writes for you. Most branches have no plan and get no row.
 
 Ticks are stored per repo and survive a reload, but clear as soon as the branch's version
 of a file changes — absorbing an edit into a file you'd already reviewed un-ticks it.
