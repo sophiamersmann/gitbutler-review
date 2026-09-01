@@ -184,9 +184,11 @@ document rather than the shape of the work, and a row per section is a table of 
 nobody asked for. Checklists quoted inside fenced code blocks aren't counted either — plans
 about plans would otherwise be full of somebody else's phases.
 
-Clicking a plan opens its file **and** its phases. They are half of what the row is for,
-and a click that opened only the document left them behind the twistie; the twistie still
-closes the row again.
+Clicking a plan opens its file **and** its phases. They are half of what the row is for, and
+a click that opened only the document left them behind the twistie. Click an open row and it
+closes, so the row toggles the way its twistie does — VSCode offers no way to collapse a row
+([vscode#40179](https://github.com/microsoft/vscode/issues/40179)), so the row comes back
+under an id it has never seen instead.
 
 **Delete Plan**, on hover, takes a directory plan as the whole directory. It goes to the trash rather than being unlinked — `plans/` is gitignored,
 so no history could give one back — and the trash is why it doesn't stop to ask.

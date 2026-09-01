@@ -319,6 +319,12 @@ const overrides = new Map()
     const tasked = by("A plan with tasks")
     const taskRows = await rowsOf("A plan with tasks")
     const stageRows = await rowsOf("A plan in a directory")
+    // the click toggles: closing is a row coming back under an id VSCode has
+    // never seen, so it has to be asked for the rows again
+    const closedShut = tree.close(tasked.name)
+    tree.setOpen(tasked, true)
+    const closedOpen = tree.close(tasked.name)
+    const toggled = await tree.getChildren()
 
     const cases = [
         [plans.length, 18, "18 plans: twelve filler, five files of their own and one directory — and never the .patch"],
@@ -376,6 +382,10 @@ const overrides = new Map()
         [api.planItem(dirPlan).command.arguments[0].endsWith("overview.md"), true, "while an unpinned one opens its overview"],
         [stageRows[0].description, "first-phase", "a phase row carries its own branch"],
         [by("No title of its own")?.name, "2026-02-04-no-title-of-its-own.md", "a plan with no heading is named by its file, less the date"],
+        [closedShut, false, "a click on a row nothing has opened closes nothing"],
+        [closedOpen, true, "and on one VSCode is holding open, it closes it"],
+        [top.find((r) => r.plan.name === tasked.name).id, "plan:2026-02-01-with-tasks.md", "a row VSCode has not been asked to close keeps its id"],
+        [toggled.find((r) => r.plan.name === tasked.name).id, "plan:2026-02-01-with-tasks.md:1", "and the closed one comes back under one VSCode has never seen, which is what collapses it"],
     ]
     const bad = cases.filter(([got, want]) => got !== want)
     for (const [got, want, what] of bad)

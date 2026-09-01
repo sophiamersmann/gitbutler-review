@@ -59,6 +59,12 @@ function activate(context) {
     const plansView = vscode.window.createTreeView("butReview.plans", {
         treeDataProvider: plans,
     })
+    context.subscriptions.push(
+        plansView.onDidExpandElement((e) => plans.setOpen(e.element.plan, true)),
+        plansView.onDidCollapseElement((e) =>
+            plans.setOpen(e.element.plan, false)
+        )
+    )
     let refreshTimer
     let plansTimer
     let plansWatcher
@@ -466,10 +472,12 @@ function activate(context) {
             async (file, line = 0, expand) => {
                 // A plan row opens its phases as well as its file: they are half
                 // of what the row is for, and a click that opened only the
-                // document left them behind the twistie. Before the editor, so
-                // it is still the tree that has focus. `select` and `focus` off
-                // — the row was clicked, so it is already both.
-                const node = expand && plans.rowFor.get(expand)
+                // document left them behind the twistie. Clicking a row that is
+                // already open closes it, so the row toggles the way its twistie
+                // does. Before the editor, so it is still the tree that has
+                // focus. `select` and `focus` off — the row was clicked, so it
+                // is already both.
+                const node = expand && !plans.close(expand) && plans.rowFor.get(expand)
                 if (node)
                     await Promise.resolve(
                         plansView.reveal(node, {

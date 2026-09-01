@@ -607,14 +607,14 @@ function churn(hunks) {
 /** A plan: the title it gives itself, how far through it is, and when it was
  *  last touched. The tooltip carries the opening paragraph, which is most of
  *  what tells two plans on the same topic apart. */
-function planItem(plan, live) {
+function planItem(plan, live, shut = 0) {
     const item = new vscode.TreeItem(
         plan.title,
         planRows(plan).length
             ? vscode.TreeItemCollapsibleState.Collapsed
             : vscode.TreeItemCollapsibleState.None
     )
-    item.id = `plan:${plan.name}`
+    item.id = `plan:${plan.name}${shut ? `:${shut}` : ""}`
     // an age is what a plan has instead of a branch, not as well as one
     item.description = [planProgress(plan), live ? live.branch : ago(plan.mtime)]
         .filter(Boolean)

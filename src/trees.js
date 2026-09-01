@@ -352,11 +352,34 @@ class PlanTree extends Tree {
         // plan name -> its row, so a click can hand the view the node to expand.
         // Rebuilt with the rows, since a stale one is a row VSCode no longer has
         this.rowFor = new Map()
+        // which plans VSCode is holding open, so a click on one can close it,
+        // and how many times each has been closed. Expansion is VSCode's state,
+        // so the view has to say
+        this.open = new Set()
+        this.shut = new Map()
     }
 
     refresh() {
         this.rowFor.clear()
         super.refresh()
+    }
+
+    setOpen(plan, open) {
+        if (open) this.open.add(plan.name)
+        else this.open.delete(plan.name)
+    }
+
+    /** Closes the row for `name`, and says whether there was one open to close.
+     *  Fires the whole view rather than the row: the count that collapses it
+     *  goes in the row's own id, so its parent is what has to rebuild it, and a
+     *  plan's parent is the root. See `BranchTree#close` for why an id is what it
+     *  takes. */
+    close(name) {
+        if (!this.open.has(name)) return false
+        this.open.delete(name)
+        this.shut.set(name, (this.shut.get(name) ?? 0) + 1)
+        this.changed.fire()
+        return true
     }
 
     // reveal() is the only way to open a row from here, and it needs this. Every
@@ -386,7 +409,7 @@ class PlanTree extends Tree {
     }
 
     row(plan, live) {
-        const item = planItem(plan, live)
+        const item = planItem(plan, live, this.shut.get(plan.name))
         this.rowFor.set(plan.name, item)
         return item
     }
