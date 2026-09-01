@@ -27,9 +27,9 @@ routes them back into the commits they belong to.
 
 ## Views
 
-Two activity-bar icons: **GitButler Review** holds Branches, Plans and Changes — the views
-you move between while reviewing — and **Pull Requests** is its own icon, since tracking a
-PR is a different sitting from reviewing a branch.
+Three activity-bar icons. **GitButler Review** holds Branches and Changes, the two you move
+between while reviewing a stack; **Plans** and **Pull Requests** get an icon each, since
+neither is part of that loop.
 
 ### Branches
 
@@ -112,7 +112,7 @@ report that instead.
 
 ### Plans
 
-The markdown files in `plans/`, the work in flight at the top and the rest newest first. It
+Its own icon in the activity bar. The markdown files in `plans/`, the work in flight at the top and the rest newest first. It
 exists because that directory is invisible to everything else: `plans/` is gitignored,
 VSCode's search skips ignored files by default, so a plan is in neither the Source Control
 view nor Ctrl+Shift+F.
@@ -195,8 +195,9 @@ rather than checkboxes: ticking one would mean writing `- [x]` back into a file 
 be editing in the same second, and for a directory plan, writing to the overview from a row
 rendered out of it.
 
-The view is hidden unless the directory exists, and `butReview.plansDirectory` says which
-one to look for.
+The view is hidden unless the directory exists, which takes its activity-bar icon with it:
+VSCode registers an extension's containers with `hideIfEmpty`, so a container whose only view
+is hidden is hidden too. `butReview.plansDirectory` says which directory to look for.
 
 ### Changes
 

@@ -82,6 +82,11 @@
                     "icon": "icon-stack3.svg"
                 },
                 {
+                    "id": "butReviewPlans",
+                    "title": "Plans",
+                    "icon": "icon-plans.svg"
+                },
+                {
                     "id": "butReviewPrs",
                     "title": "Pull Requests",
                     "icon": "icon-pull-request.svg"
@@ -96,16 +101,18 @@
                     "icon": "icon-stack3.svg"
                 },
                 {
-                    "id": "butReview.plans",
-                    "name": "Plans",
-                    "when": "butReview.hasPlans",
-                    "icon": "icon-stack3.svg"
-                },
-                {
                     "id": "butReview.uncommitted",
                     "name": "Changes",
                     "when": "butReview.hasUncommitted",
                     "icon": "icon-stack3.svg"
+                }
+            ],
+            "butReviewPlans": [
+                {
+                    "id": "butReview.plans",
+                    "name": "Plans",
+                    "when": "butReview.hasPlans",
+                    "icon": "icon-plans.svg"
                 }
             ],
             "butReviewPrs": [
