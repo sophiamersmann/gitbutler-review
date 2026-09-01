@@ -80,6 +80,11 @@
                     "id": "butReview",
                     "title": "GitButler Review",
                     "icon": "icon-stack3.svg"
+                },
+                {
+                    "id": "butReviewPrs",
+                    "title": "Pull Requests",
+                    "icon": "icon-pull-request.svg"
                 }
             ]
         },
@@ -97,15 +102,17 @@
                     "icon": "icon-stack3.svg"
                 },
                 {
-                    "id": "butReview.prs",
-                    "name": "Pull Requests",
-                    "icon": "icon-stack3.svg"
-                },
-                {
                     "id": "butReview.uncommitted",
                     "name": "Changes",
                     "when": "butReview.hasUncommitted",
                     "icon": "icon-stack3.svg"
+                }
+            ],
+            "butReviewPrs": [
+                {
+                    "id": "butReview.prs",
+                    "name": "Pull Requests",
+                    "icon": "icon-pull-request.svg"
                 }
             ]
         },

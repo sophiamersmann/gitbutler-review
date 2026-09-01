@@ -27,6 +27,10 @@ routes them back into the commits they belong to.
 
 ## Views
 
+Two activity-bar icons: **GitButler Review** holds Branches, Plans and Changes — the views
+you move between while reviewing — and **Pull Requests** is its own icon, since tracking a
+PR is a different sitting from reviewing a branch.
+
 ### Branches
 
 Applied stacks, sorted by recent activity, with each branch row showing its CI summary
@@ -231,8 +235,9 @@ could go, so the section doesn't appear.
 
 ### Pull Requests
 
-Your open PRs grouped by stack, bottom-first, since the branch nearest the target lands
-next. GitHub's own extension can't group them this way, as it doesn't know about stacks.
+Its own icon in the activity bar. Your open PRs grouped by stack, bottom-first, since the
+branch nearest the target lands next. GitHub's own extension can't group them this way, as
+it doesn't know about stacks.
 
 Each row gets one circle, ordered by how much it needs from you:
 

@@ -160,16 +160,22 @@ const usedColors = new Set(
 )
 gripe("used as a colour but not declared", missing(usedColors, declaredColors))
 
-const icon = contributes.viewsContainers.activitybar[0].icon
-if (!fs.existsSync(path.join(__dirname, icon)))
-    problems.push(`container icon missing: ${icon}`)
+const containers = contributes.viewsContainers.activitybar
+for (const { icon } of containers)
+    if (!fs.existsSync(path.join(__dirname, icon)))
+        problems.push(`container icon missing: ${icon}`)
+// a views key naming no container is a whole view VSCode silently never draws
+gripe(
+    "holds views but is not a container",
+    missing(new Set(Object.keys(contributes.views)), new Set(containers.map((c) => c.id)))
+)
 
 if (problems.length) {
     for (const p of problems) console.log(`PROBLEM  ${p}`)
     process.exitCode = 1
 } else {
     console.log(
-        `ok: manifest — ${declaredCommands.size} commands, ${menuCommands.size} menu refs, ${declaredSettings.size} settings, ${declaredColors.size} colours all resolve`
+        `ok: manifest — ${declaredCommands.size} commands, ${menuCommands.size} menu refs, ${declaredSettings.size} settings, ${declaredColors.size} colours all resolve; ${views.size} views over ${containers.length} containers`
     )
 }
 
