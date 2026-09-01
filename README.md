@@ -108,10 +108,10 @@ report that instead.
 
 ### Plans
 
-The markdown files in `plans/`, newest first, with everything past the first screen behind
-one row. It exists because that directory is invisible to everything else: `plans/` is
-gitignored, VSCode's search skips ignored files by default, so a plan is in neither the
-Source Control view nor Ctrl+Shift+F.
+The markdown files in `plans/`, the work in flight at the top and the rest newest first. It
+exists because that directory is invisible to everything else: `plans/` is gitignored,
+VSCode's search skips ignored files by default, so a plan is in neither the Source Control
+view nor Ctrl+Shift+F.
 
 Rows are titled by the plan's own `#` heading rather than its filename, so
 `2026-08-25-legend-emphasis-props.md` reads "Make emphasis a legend render prop, drop the
@@ -121,16 +121,21 @@ most of what tells two plans on the same topic apart.
 **A plan whose branch is applied is pinned to the top**, in the order the Branches view
 puts those branches in, and says that branch where it would otherwise say its age. That is
 the whole of what the `Branch:` line below buys, and it is derived: a plan is live because a
-branch it names is applied right now, so merging a branch archives its own plan with nothing
+branch it names is applied right now, so merging a branch unpins its own plan with nothing
 to update. Clicking a pinned plan opens the phase you are on rather than line 1 of a
 476-line overview.
 
-**Then twelve rows, then `N older plans`.** A count rather than a date: mtime gets reset
-wholesale by a copy — 25 of the 54 plans this was written against share one — so a "touched
-this week" cut would be measuring the last bulk copy rather than the work. A count also
-keeps the view one screen tall whatever the directory holds, and a pinned plan comes out of
-that budget rather than on top of it. The archive is flat and newest-first; that far down,
-text search is the faster way in.
+**Then every other plan, newest first.** The list is flat: how far through a plan is shows
+in its `11/13` rather than in which folder it sits under, so nothing has to be filed anywhere
+and text search is the way into the tail of it. An applied branch outranks the ordering — a
+live plan is pinned whatever its ticks say.
+
+Newest is by mtime, which is not the date in the filename: the convention keeps a plan's
+original date across every revision, so the name says when the work started and the mtime
+says when you last touched it. A directory plan is dated by the newest file in it, since the
+directory's own mtime moves only when a file is added or removed. The hazard is that a copy
+resets mtime wholesale — 25 of the 54 plans this was written against share one — so a
+freshly copied plan sorts above one you are mid-way through.
 
 **The `Branch:` line is the whole convention.** One line under a plan's title, naming the
 GitButler branch the work lands on, comma-separated for more than one:
@@ -276,7 +281,7 @@ On Linux or Windows that prepend is harmless, but you may need to adjust it if `
 | `butReview.plansDirectory` | `plans` | Where plan files live, relative to the repo root. Empty hides the Plans view. |
 | `butReview.demoteBranches` | `["docs", "debug"]` | Stacks whose every branch matches one of these hyphen-separated tokens sort to the bottom regardless of activity. |
 
-Six theme colours are contributed under `butReview.*` for retuning the icons, the
+Seven theme colours are contributed under `butReview.*` for retuning the icons, the
 dimming, and the ruler mark.
 
 ## Development

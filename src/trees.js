@@ -5,8 +5,8 @@ const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but
 const { listPlans } = require("./plans")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
-const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, filesGroupItem, fileItem, folderItem, hunkItem, olderPlansItem, planItem, planLinkItem, planStageItem, planTaskItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
-const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, layoutFor, liveBranch, livePlans, planIndex, planRows, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
+const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, filesGroupItem, fileItem, folderItem, hunkItem, planItem, planLinkItem, planStageItem, planTaskItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
+const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, layoutFor, livePlans, planIndex, planRows, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -337,14 +337,8 @@ class PrTree extends Tree {
     }
 }
 
-// How many plans the view shows before the archive row. A count rather than an
-// age: mtime is reset wholesale by a copy — 25 of this repo's 54 plans share one
-// — so a duration would be measuring the last bulk copy, and a count keeps the
-// view one screen tall whatever the directory holds.
-const RECENT_ROWS = 12
-
-/** Plan documents: the ones whose branch is applied first, then the rest newest
- *  first, with everything past the first screen behind one row. */
+/** Plan documents: the work in flight at the top — a plan whose branch is
+ *  applied first — then every other plan, newest first. */
 class PlanTree extends Tree {
     constructor() {
         super()
@@ -355,38 +349,28 @@ class PlanTree extends Tree {
 
     refresh() {
         this.rowFor.clear()
-        this.where = undefined
         super.refresh()
     }
 
-    // reveal() is the only way to open a row from here, and it needs this. A
-    // plan is either a top-level row or one of the archive's; nothing else is
-    // ever revealed
-    getParent(node) {
-        return node.parent
+    // reveal() is the only way to open a row from here, and it needs this. Every
+    // plan is a top-level row, and a phase behind one is never revealed
+    getParent() {
+        return undefined
     }
 
     async getChildren(node) {
         const root = repoRoot()
         if (!root) return []
         try {
-            if (node?.plans) return node.plans.map((p) => this.row(p, node))
             if (node?.plan) return this.rows(node.plan)
             if (node) return []
 
             const plans = await listPlans(root)
-            this.where = await appliedBranches(root)
-            const live = livePlans(plans, this.where)
+            const live = livePlans(plans, await appliedBranches(root))
             const rest = plans.filter((p) => !live.some((l) => l.plan === p))
-            // the promoted rows come out of the recency budget rather than on
-            // top of it, so the view stays one screen whatever is applied
-            const recent = Math.max(0, RECENT_ROWS - live.length)
-            const older = rest.slice(recent)
-            const archive = older.length ? olderPlansItem(older) : undefined
             return [
-                ...live.map((l) => this.row(l.plan, undefined, l)),
-                ...rest.slice(0, recent).map((p) => this.row(p)),
-                ...(archive ? [archive] : []),
+                ...live.map((l) => this.row(l.plan, l)),
+                ...rest.map((p) => this.row(p)),
             ]
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
@@ -394,9 +378,8 @@ class PlanTree extends Tree {
         }
     }
 
-    row(plan, parent, live) {
+    row(plan, live) {
         const item = planItem(plan, live)
-        item.parent = parent
         this.rowFor.set(plan.name, item)
         return item
     }
@@ -406,11 +389,7 @@ class PlanTree extends Tree {
     rows(plan) {
         return planRows(plan).map((row) =>
             row.stage
-                ? planStageItem(
-                      row.stage,
-                      plan,
-                      !!liveBranch(row.stage.branches, this.where ?? new Map())
-                  )
+                ? planStageItem(row.stage, plan)
                 : planTaskItem(row.task, plan)
         )
     }

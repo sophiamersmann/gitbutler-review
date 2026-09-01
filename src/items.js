@@ -639,14 +639,12 @@ function planItem(plan, live) {
 /** One phase of a plan directory, ticked exactly as its overview ticks it. A
  *  file the overview never links has no tick to show: it is a document in the
  *  plan rather than a phase of it, and the plain glyph is what says so. */
-function planStageItem(stage, plan, applied) {
+function planStageItem(stage, plan) {
     const item = new vscode.TreeItem(stage.title)
     item.id = `plan:${plan.name}:${stage.name}`
     item.description = stage.branches.join(", ")
-    item.iconPath = new vscode.ThemeIcon(
-        stage.done === undefined ? "file" : tick(stage.done),
-        applied ? new vscode.ThemeColor("butReview.branchIcon") : undefined
-    )
+    item.iconPath =
+        stage.done === undefined ? new vscode.ThemeIcon("file") : tick(stage.done)
     item.tooltip = new vscode.MarkdownString(
         [`**${stage.title}**`, `\`${stage.name}\``, stage.preview && `\n${stage.preview}`]
             .filter(Boolean)
@@ -677,23 +675,8 @@ function planTaskItem(task, plan) {
     const item = new vscode.TreeItem(task.text)
     item.id = `plan:${plan.name}:task:${task.line}`
     item.description = `L${task.line + 1}`
-    item.iconPath = new vscode.ThemeIcon(tick(task.done))
+    item.iconPath = tick(task.done)
     item.command = openPlan(plan.file, task.line)
-    return item
-}
-
-/** The archive, last and collapsed, for the reason Unplaced is: the rows above
- *  it are the ones you skim. */
-function olderPlansItem(plans) {
-    const item = new vscode.TreeItem(
-        `${plans.length} older plans`,
-        vscode.TreeItemCollapsibleState.Collapsed
-    )
-    item.id = "plans:older"
-    item.iconPath = new vscode.ThemeIcon("archive")
-    item.tooltip =
-        "Everything the rows above left over, newest first. Once you are this far down, text search is the faster way in."
-    item.plans = plans
     return item
 }
 
@@ -707,8 +690,13 @@ function onePlanAcross(branches) {
 
 // Icons rather than checkboxes: nothing here writes to your files, and a box
 // that looks like the ones in the Branches view but does nothing would be worse
-// than no box at all.
-const tick = (done) => (done ? "pass-filled" : "circle-outline")
+// than no box at all. The colour is explicit because an uncoloured codicon takes
+// `icon.foreground`, which some themes set to the same hue as another row's icon.
+const tick = (done) =>
+    new vscode.ThemeIcon(
+        done ? "pass-filled" : "circle-outline",
+        new vscode.ThemeColor("butReview.planTick")
+    )
 
 /** `expand` names the plan whose row this is, and only a plan row passes one:
  *  clicking a plan opens its phases as well as its file, since half of what the
@@ -719,4 +707,4 @@ const openPlan = (file, line, expand) => ({
     arguments: [file, line, expand],
 })
 
-module.exports = { BASE, FILE, PR, DECORATION, hunkKind, planItem, planLinkItem, planStageItem, planTaskItem, olderPlansItem, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, filesGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, PR, DECORATION, hunkKind, planItem, planLinkItem, planStageItem, planTaskItem, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, filesGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }

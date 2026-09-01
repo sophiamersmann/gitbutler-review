@@ -256,6 +256,10 @@ const overrides = new Map()
         "# Nothing under here\n\nBranch: `bare` · Base: master · Started: 2026-02-03\n"
     )
     write("2026-02-04-no-title-of-its-own.md", "Just prose, no heading at all.\n")
+    write(
+        "2026-02-04-finished.md",
+        ["# A plan with nothing left", "", "- [x] first", "- [x] second"].join("\n")
+    )
     write("stray.patch", "diff --git a/x b/x\n")
 
     write(
@@ -306,16 +310,14 @@ const overrides = new Map()
     const dirPlan = by("A plan in a directory")
     const tasked = by("A plan with tasks")
     const taskRows = await rowsOf("A plan with tasks")
-    const archive = top.at(-1)
-    const archived = await tree.getChildren(archive)
     const stageRows = await rowsOf("A plan in a directory")
 
     const cases = [
-        [plans.length, 17, "17 plans: twelve filler, four files of their own and one directory — and never the .patch"],
+        [plans.length, 18, "18 plans: twelve filler, five files of their own and one directory — and never the .patch"],
         [plans[0].title, "A plan in a directory", "newest first, and a directory is dated by the newest file in it"],
-        [top.length, 13, "twelve rows and an archive row"],
-        [archive.label, "5 older plans", "the archive says how many it holds"],
-        [archived.length, 5, "and holds them"],
+        [top.length, 18, "every plan is a top-level row, finished or not"],
+        [top.map((r) => r.label).join(" | ") === plans.map((p) => p.title).join(" | "), true, "in the order the list has them, newest first"],
+        [top.every((r) => r.contextValue === "plan"), true, "and every row is a plan row, hover buttons and all"],
         [dirPlan.stages.map((s) => s.name).join(" "), "phase-1.md phase-2.md phase-3.md", "phases in the order the overview links them, ./ and #anchor and all"],
         [dirPlan.docs.map((d) => d.name).join(" "), "notes.md", "a file the overview never links is a document, and the overview is neither"],
         [api.planProgress(dirPlan), "2/3", "progress counts phases, not the files beside them"],
@@ -331,7 +333,6 @@ const overrides = new Map()
         [stageRows[0].command.arguments[2], undefined, "a phase row has nothing to open, so it names none"],
         [path.basename(dirPlan.path), "2026-02-05-dir", "a directory plan is the directory, which is what deleting it takes"],
         [path.basename(tasked.path), "2026-02-01-with-tasks.md", "a single-file plan is its file"],
-        [archived[0].contextValue, "plan", "an archived row is a plan row, hover button and all"],
         [tasked.branches.join(" "), "with-tasks and-another", "a plan reads the branches under its title"],
         [tasked.preview, "The opening paragraph, which is what the tooltip shows.", "and the header is not its prose"],
         [by("Nothing under here").branches.join(" "), "bare", "`·` separates header keys as a newline does, and backticks are not part of a name"],

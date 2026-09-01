@@ -47,6 +47,15 @@
                 }
             },
             {
+                "id": "butReview.planTick",
+                "description": "Icon colour for plan phase and task ticks",
+                "defaults": {
+                    "dark": "charts.purple",
+                    "light": "charts.purple",
+                    "highContrast": "charts.purple"
+                }
+            },
+            {
                 "id": "butReview.prOpen",
                 "description": "Icon colour for open pull requests",
                 "defaults": {
@@ -341,14 +350,9 @@
                     "group": "navigation"
                 },
                 {
-                    "command": "butReview.newPlan",
-                    "when": "view == butReview.plans",
-                    "group": "navigation@1"
-                },
-                {
                     "command": "butReview.refreshPlans",
                     "when": "view == butReview.plans",
-                    "group": "navigation@2"
+                    "group": "navigation"
                 }
             ],
             "view/item/context": [

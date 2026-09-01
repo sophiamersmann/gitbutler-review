@@ -569,7 +569,7 @@ const liveBranch = (names, where) =>
 
 /** Plans with a branch applied right now, each carrying the phase that names it,
  *  ordered as the Branches view orders those branches. Liveness is derived, so a
- *  merged branch archives its own plan with nothing to update. */
+ *  merged branch unpins its own plan with nothing to update. */
 function livePlans(plans, where) {
     const live = []
     for (const plan of plans) {
@@ -621,11 +621,14 @@ function planRows(plan) {
     return plan.tasks.map((task) => ({ task }))
 }
 
+/** A plan's phases, or the tasks it writes them as. */
+const planItems = (plan) => (plan.stages.length ? plan.stages : plan.tasks)
+
 /** `11/13` over a plan's phases, or over its tasks when it has no phases. Empty
  *  when it has neither: a placeholder would be a column, and this is not a
  *  table. */
 function planProgress(plan) {
-    const items = plan.stages.length ? plan.stages : plan.tasks
+    const items = planItems(plan)
     if (!items.length) return ""
     return `${items.filter((i) => i.done).length}/${items.length}`
 }
