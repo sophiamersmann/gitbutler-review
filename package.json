@@ -59,6 +59,15 @@
                 }
             },
             {
+                "id": "butReview.livePlanIcon",
+                "description": "Icon colour for a plan whose branch is applied",
+                "defaults": {
+                    "dark": "charts.blue",
+                    "light": "charts.blue",
+                    "highContrast": "charts.blue"
+                }
+            },
+            {
                 "id": "butReview.prOpen",
                 "description": "Icon colour for open pull requests",
                 "defaults": {

@@ -309,11 +309,11 @@ const overrides = new Map()
         linked(name).map((link) => api.planLinkItem(link, { name }))
     const folded = (name) =>
         api.plansGroupItem({ name, plans: linked(name) })
-    // promotion, against a stubbed workspace: the fixture's branch names are not
+    // liveness, against a stubbed workspace: the fixture's branch names are not
     // this repo's, so the ranks have to be handed to it
     const at = (...names) =>
         new Map(names.map((name, depth) => [name, { stack: 0, depth }]))
-    const promoted = (where) =>
+    const liveOnes = (where) =>
         api.livePlans(plans, where).map((l) => [l.plan.title, l.stage?.name, l.branch])
     const dirPlan = by("A plan in a directory")
     const tasked = by("A plan with tasks")
@@ -370,16 +370,17 @@ const overrides = new Map()
         [branchRows("with-tasks")[0]?.label, "A plan with tasks", "a whole plan is one row, titled by the plan"],
         [branchRows("with-tasks")[0]?.description, "1/3", "with its progress, since here the plan is not missing its context"],
         [branchRows("no-such-branch").length, 0, "a branch with no plan gets no row"],
-        [JSON.stringify(promoted(at("second-phase"))), '[["A plan in a directory","phase-2.md","second-phase"]]', "an applied branch pins its plan, named by the phase that claims it"],
-        [JSON.stringify(promoted(at("first-phase"))), '[["A plan in a directory","phase-1.md","first-phase"]]', "a branch its overview also names still resolves to the phase"],
-        [JSON.stringify(promoted(at("whole-plan"))), '[["A plan in a directory",null,"whole-plan"]]', "and a branch only the overview names pins the plan with no phase"],
-        [promoted(at("second-phase", "with-tasks")).map((l) => l[0]).join(" | "), "A plan in a directory | A plan with tasks", "pinned in the order the Branches view puts their branches in"],
-        [promoted(at("with-tasks", "second-phase")).map((l) => l[0]).join(" | "), "A plan with tasks | A plan in a directory", "which is the only thing that decides it, not recency"],
-        [promoted(new Map()).length, 0, "nothing applied pins nothing"],
+        [JSON.stringify(liveOnes(at("second-phase"))), '[["A plan in a directory","phase-2.md","second-phase"]]', "an applied branch makes its plan live, named by the phase that claims it"],
+        [JSON.stringify(liveOnes(at("first-phase"))), '[["A plan in a directory","phase-1.md","first-phase"]]', "a branch its overview also names still resolves to the phase"],
+        [JSON.stringify(liveOnes(at("whole-plan"))), '[["A plan in a directory",null,"whole-plan"]]', "and a branch only the overview names makes the plan live with no phase"],
+        [liveOnes(at("second-phase", "with-tasks")).length, 2, "one live entry per plan, however many of its branches are applied"],
+        [liveOnes(new Map()).length, 0, "nothing applied makes nothing live"],
         [api.liveBranch(["second-phase", "first-phase"], at("second-phase", "first-phase"))?.branch, "second-phase", "of several applied, the one nearest the top of its stack"],
-        [api.planItem(dirPlan, api.livePlans(plans, at("second-phase"))[0]).description, "2/3  \u00b7  second-phase", "a pinned row says its branch where it said an age"],
+        [api.planItem(dirPlan, api.livePlans(plans, at("second-phase"))[0]).description, "2/3  \u00b7  second-phase", "a live row says its branch where it said an age"],
         [api.planItem(dirPlan, api.livePlans(plans, at("second-phase"))[0]).command.arguments[0].endsWith("phase-2.md"), true, "and opens the phase you are on"],
-        [api.planItem(dirPlan).command.arguments[0].endsWith("overview.md"), true, "while an unpinned one opens its overview"],
+        [api.planItem(dirPlan, api.livePlans(plans, at("second-phase"))[0]).iconPath.color?.id, "butReview.livePlanIcon", "and its icon takes the live colour"],
+        [api.planItem(dirPlan).iconPath.color, undefined, "which one that is not live does not"],
+        [api.planItem(dirPlan).command.arguments[0].endsWith("overview.md"), true, "while one that is not live opens its overview"],
         [stageRows[0].description, "first-phase", "a phase row carries its own branch"],
         [by("No title of its own")?.name, "2026-02-04-no-title-of-its-own.md", "a plan with no heading is named by its file, less the date"],
         [closedShut, false, "a click on a row nothing has opened closes nothing"],

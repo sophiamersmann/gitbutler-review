@@ -113,7 +113,7 @@ report that instead.
 
 ### Plans
 
-Its own icon in the activity bar. The markdown files in `plans/`, the work in flight at the top and the rest newest first. It
+Its own icon in the activity bar. The markdown files in `plans/`, newest first. It
 exists because that directory is invisible to everything else: `plans/` is gitignored,
 VSCode's search skips ignored files by default, so a plan is in neither the Source Control
 view nor Ctrl+Shift+F.
@@ -123,17 +123,15 @@ Rows are titled by the plan's own `#` heading rather than its filename, so
 observer decorator from the legends". The tooltip carries its opening paragraph, which is
 most of what tells two plans on the same topic apart.
 
-**A plan whose branch is applied is pinned to the top**, in the order the Branches view
-puts those branches in, and says that branch where it would otherwise say its age. That is
-the whole of what the `Branch:` line below buys, and it is derived: a plan is live because a
-branch it names is applied right now, so merging a branch unpins its own plan with nothing
-to update. Clicking a pinned plan opens the phase you are on rather than line 1 of a
-476-line overview.
+**A plan whose branch is applied says that branch** where it would otherwise say its age,
+and clicking it opens the phase you are on rather than line 1 of a 476-line overview. That
+is the whole of what the `Branch:` line below buys, and it is derived: a plan is live because
+a branch it names is applied right now, so merging a branch drops the label with nothing to
+update. It does not move the row: a live plan sits wherever its mtime puts it.
 
-**Then every other plan, newest first.** The list is flat: how far through a plan is shows
-in its `11/13` rather than in which folder it sits under, so nothing has to be filed anywhere
-and text search is the way into the tail of it. An applied branch outranks the ordering — a
-live plan is pinned whatever its ticks say.
+**Every plan, newest first.** The list is flat: how far through a plan is shows in its
+`11/13` rather than in which folder it sits under, so nothing has to be filed anywhere and
+text search is the way into the tail of it.
 
 Newest is by mtime, which is not the date in the filename: the convention keeps a plan's
 original date across every revision, so the name says when the work started and the mtime

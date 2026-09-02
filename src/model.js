@@ -567,9 +567,9 @@ const liveBranch = (names, where) =>
         .filter((live) => live.at)
         .sort(byRank)[0]
 
-/** Plans with a branch applied right now, each carrying the phase that names it,
- *  ordered as the Branches view orders those branches. Liveness is derived, so a
- *  merged branch unpins its own plan with nothing to update. */
+/** Plans with a branch applied right now, each carrying the phase that names it.
+ *  Liveness is derived, so a merged branch drops its own plan's branch label
+ *  with nothing to update. */
 function livePlans(plans, where) {
     const live = []
     for (const plan of plans) {
@@ -584,7 +584,7 @@ function livePlans(plans, where) {
         const best = candidates.sort(byRank)[0]
         if (best) live.push(best)
     }
-    return live.sort(byRank)
+    return live
 }
 
 /** A plan directory's phases: the `.md` children its overview links to, in the

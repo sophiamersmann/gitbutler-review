@@ -344,8 +344,8 @@ class PrTree extends Tree {
     }
 }
 
-/** Plan documents: the work in flight at the top — a plan whose branch is
- *  applied first — then every other plan, newest first. */
+/** Plan documents, newest first. A plan whose branch is applied says the branch
+ *  where the others say their age, and keeps its place in the order. */
 class PlanTree extends Tree {
     constructor() {
         super()
@@ -397,11 +397,9 @@ class PlanTree extends Tree {
 
             const plans = await listPlans(root)
             const live = livePlans(plans, await appliedBranches(root))
-            const rest = plans.filter((p) => !live.some((l) => l.plan === p))
-            return [
-                ...live.map((l) => this.row(l.plan, l)),
-                ...rest.map((p) => this.row(p)),
-            ]
+            return plans.map((p) =>
+                this.row(p, live.find((l) => l.plan === p))
+            )
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
@@ -425,8 +423,9 @@ class PlanTree extends Tree {
     }
 }
 
-/** Where each applied branch sits, for the promotion. A repo GitButler does not
- *  manage still has plans, so a failed status costs the order and nothing more. */
+/** Where each applied branch sits, which is what says a plan is live. A repo
+ *  GitButler does not manage still has plans, so a failed status costs the
+ *  branch labels and nothing more. */
 const appliedBranches = (root) =>
     status(root)
         .then((st) => positions(stacksOf(st)))

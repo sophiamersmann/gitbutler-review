@@ -619,7 +619,14 @@ function planItem(plan, live, shut = 0) {
     item.description = [planProgress(plan), live ? live.branch : ago(plan.mtime)]
         .filter(Boolean)
         .join("  \u00b7  ")
-    item.iconPath = new vscode.ThemeIcon("checklist")
+    // the colour is the branch's: a live plan keeps its place in the order, so
+    // the icon is what picks it out
+    item.iconPath = live
+        ? new vscode.ThemeIcon(
+              "checklist",
+              new vscode.ThemeColor("butReview.livePlanIcon")
+          )
+        : new vscode.ThemeIcon("checklist")
     item.tooltip = new vscode.MarkdownString(
         [
             `**${plan.title}**`,
