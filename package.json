@@ -8,6 +8,9 @@
         "vscode": "^1.90.0"
     },
     "main": "./extension.js",
+    "activationEvents": [
+        "onStartupFinished"
+    ],
     "contributes": {
         "colors": [
             {
