@@ -596,16 +596,15 @@ function activate(context) {
         }),
 
         // A stack has no name of its own, so the one shown is read off the
-        // `(topic)` its branches' commits agree on — and when that reading is
-        // wrong, or the work has moved on from what the commits say, this is how
-        // you say so. Keyed on the bottom branch, so it survives pushing another
-        // branch on top.
+        // `(topic)` its branches' PR titles agree on — and when that reading is
+        // wrong, or the branches have no PRs yet, this is how you say so. Keyed
+        // on the bottom branch, so it survives pushing another branch on top.
         vscode.commands.registerCommand("butReview.renameStack", async (node) => {
             const stack = node.stack
             const name = await vscode.window.showInputBox({
                 title: "Name this stack",
                 value: stackName(stack),
-                prompt: "Leave it empty to go back to the name its commits imply.",
+                prompt: "Leave it empty to go back to the name its PR titles imply.",
             })
             if (name === undefined) return // dismissed, which is not "clear it"
             // clear every branch's, then write the bottom's: a stack renamed
@@ -631,9 +630,12 @@ function activate(context) {
         // calls, the other a network round trip
         vscode.commands.registerCommand("butReview.refresh", refreshAll),
 
-        vscode.commands.registerCommand("butReview.refreshPrs", () =>
+        // the branch view names its stacks off the same list, so it repaints
+        // too — with what it has, then again when the new list lands
+        vscode.commands.registerCommand("butReview.refreshPrs", () => {
             prs.refresh()
-        ),
+            tree.changed.fire()
+        }),
 
         // per branch, not global: layout is a property of how big a branch is,
         // and a title-bar button could only ever mean "all of them"

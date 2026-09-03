@@ -34,7 +34,7 @@ neither is part of that loop.
 ### Branches
 
 Applied stacks, sorted by recent activity, with each branch row showing its CI summary
-and age. A stack is named from the `(topic)` convention in commit subjects, falling back
+and age. A stack is named from the `(topic)` convention in its PR titles, falling back
 to the common prefix of its branch names. Click a file to open the diff, or tick it off
 once reviewed.
 

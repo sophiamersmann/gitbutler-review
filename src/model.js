@@ -90,29 +90,19 @@ const isDemoted = (name) => {
 }
 
 /** A stack has no name of its own, so never borrow a member's — least of all
- *  the top branch, which changes every time another is pushed on. Prefer what
- *  the author already wrote, then what the branch names agree on, then admit
- *  there is no name. */
+ *  the top branch, which changes every time another is pushed on. Prefer the
+ *  name given by hand, then the `(topic)` its PR titles agree on, then what
+ *  the branch names agree on, then admit there is no name. */
 function stackName(stack) {
-    // an explicit name beats any reading of the commits, which is the whole
-    // point of setting one
+    // an explicit name beats any reading of the PRs, which is the whole point
+    // of setting one
     if (stack.label) return stack.label
-    // One vote per branch, not per commit: a branch that took seven commits is
-    // not seven times more what the stack is about than one that took two. By
-    // commits, a six-branch stack read as the topic of its busiest branch long
-    // after the work had moved on.
+    // one vote per branch, cast by its PR title; a branch with no PR yet — or
+    // none fetched yet — casts none
     const topics = new Map()
     for (const b of stack.branches) {
-        const mine = new Map()
-        for (const { subject } of b.commits) {
-            const topic = /^\S+\s*\(([^)]+)\)/.exec(subject)?.[1]
-            if (topic) mine.set(topic, (mine.get(topic) ?? 0) + 1)
-        }
-        // a branch whose own commits disagree still gets the one vote, cast for
-        // whichever topic it says most — newest first, so a fresh topic wins the
-        // branch's own tie
-        const own = [...mine].sort((a, b) => b[1] - a[1])[0]
-        if (own) topics.set(own[0], (topics.get(own[0]) ?? 0) + 1)
+        const topic = /^\S+\s*\(([^)]+)\)/.exec(b.pr?.title ?? "")?.[1]
+        if (topic) topics.set(topic, (topics.get(topic) ?? 0) + 1)
     }
     // branches come top-first and sort is stable, so a tie goes to the topic
     // nearest the top of the stack — the work being done now

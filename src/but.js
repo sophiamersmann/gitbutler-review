@@ -26,14 +26,16 @@ function status(root) {
 // otherwise repaint from the status the write just invalidated.
 status.invalidate = () => (statusCache = { at: 0, value: undefined })
 
-/** Applied stacks, each branch paired with the branch below it.
+/** Applied stacks, each branch paired with the branch below it and with its
+ *  open PR when `prs` has them.
  *  Ordered by most recent commit — `but`'s own order is the app's lane order,
  *  which says nothing about what you are working on. The one thing it did
  *  encode, that lane 0 is where unplaced changes land, becomes a flag so the
  *  fact survives without dictating position.
  *  Branches stay top-first here so `base` keeps referring to the next entry;
  *  views reverse at render time. */
-function stacksOf(st, overrides) {
+function stacksOf(st, overrides, prs) {
+    const prOf = new Map((prs ?? []).map((p) => [p.headRefName, p]))
     return st.stacks
         .map((stack, lane) => ({
             cliId: stack.cliId,
@@ -53,7 +55,7 @@ function stacksOf(st, overrides) {
                 return {
                     name: b.name,
                     base,
-                    pr: b.reviewId?.replace(/[()]/g, ""),
+                    pr: prOf.get(b.name),
                     passing: b.ci?.passingCheckTitles ?? [],
                     pending: b.ci?.pendingCheckTitles ?? [],
                     failing: b.ci?.failingCheckTitles ?? [],
@@ -312,4 +314,33 @@ const listPrs = async (root) =>
         )
     )
 
-module.exports = { status, stacksOf, uncommittedPlan, rangeKey, listPrs, prDetails }
+// The one PR list both views read: the PR view for its rows, the branch view
+// for the stack names. Kept until asked to refetch, unlike status — a PR list
+// is network, and it only changes when you push or someone reviews.
+let prCache = {}
+
+/** The promise is what's cached, not its result: two overlapping refreshes
+ *  would otherwise both get past the await and fetch twice. A rejection is not
+ *  held, or it would keep failing until a manual refresh. */
+function openPrs(root) {
+    if (!prCache.value) {
+        const value = listPrs(root)
+        prCache = { value }
+        value.then(
+            (prs) => {
+                if (prCache.value === value) prCache.prs = prs
+            },
+            () => {
+                if (prCache.value === value) openPrs.invalidate()
+            }
+        )
+    }
+    return prCache.value
+}
+
+openPrs.invalidate = () => (prCache = {})
+
+/** The list if it has arrived, for a caller that must not wait on the network */
+openPrs.arrived = () => prCache.prs
+
+module.exports = { status, stacksOf, uncommittedPlan, rangeKey, listPrs, openPrs, prDetails }

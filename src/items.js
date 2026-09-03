@@ -322,10 +322,10 @@ function stackItem(stack) {
     )
     const head = [
         `\`${stack.cliId}\`${stack.primary ? " — unplaced changes absorb here" : ""}`,
-        // else the next disagreement between the name and the commits is a
+        // else the next disagreement between the name and the PRs is a
         // puzzle rather than a fact
         stack.label &&
-            `Renamed — the commits say \`${stackName({ ...stack, label: undefined })}\`.`,
+            `Renamed — the PRs say \`${stackName({ ...stack, label: undefined })}\`.`,
     ].filter(Boolean)
     const plan = onePlanAcross(stack.branches)
     item.tooltip = new vscode.MarkdownString(

@@ -624,25 +624,26 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
 
 // What a stack is called, which is a vote and so has ties and outliers
 {
+    // a topic per branch, cast by its PR title; `undefined` is a branch with no PR
     const of = (...topics) => ({
         branches: topics.map((t, i) => ({
             name: `b${i}`,
-            commits: t.map((x) => ({
-                subject: `🔨🤖 ${x ? `(${x}) ` : ""}did a thing`,
-            })),
+            pr: t === undefined
+                ? undefined
+                : { title: `🔨🤖 ${t ? `(${t}) ` : ""}did a thing` },
         })),
     })
     const cases = [
-        [api.stackName(of(["a"], ["a"], ["b", "b", "b", "b"])), "a", "the busiest branch does not outvote the rest"],
-        [api.stackName(of(["a"], ["b"])), "a", "a tie goes to the branch nearest the top"],
-        [api.stackName(of(["a", "b", "b"], ["c"])), "b", "a branch votes for whatever it says most"],
-        [api.stackName(of([""], [""])), "Stack of 2", "no topics anywhere, and no name to give"],
+        [api.stackName(of("a", "b", "a")), "a", "the topic most PRs carry wins"],
+        [api.stackName(of("a", "b")), "a", "a tie goes to the branch nearest the top"],
+        [api.stackName(of(undefined, "b", "b")), "b", "a branch without a PR casts no vote"],
+        [api.stackName(of("", "")), "Stack of 2", "no topics anywhere, and no name to give"],
     ].filter(([got, want]) => got !== want)
     for (const [got, want, what] of cases)
         console.log(`PROBLEM  stack name: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
     if (cases.length) process.exitCode = 1
     // an explicit name, which is what the vote is there to be overruled by
-    const named = { ...of(["a"], ["b"]), label: "whatever I say" }
+    const named = { ...of("a", "b"), label: "whatever I say" }
     const key = api.stackKey({ branches: [{ name: "top" }, { name: "bottom" }] })
     const lens = api.wholeStack({
         branches: [
@@ -669,12 +670,9 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
 }
 
 const prs = await api.listPrs(root)
-const byBranch = new Map(prs.map((p) => [p.headRefName, p]))
 let prRows = 0
-for (const s of stacks) {
-    const rows = s.branches
-        .map((b) => ({ branch: b, pr: byBranch.get(b.name) }))
-        .filter((r) => r.pr)
+for (const s of api.stacksOf(st, undefined, prs)) {
+    const rows = s.branches.map((b) => ({ branch: b, pr: b.pr })).filter((r) => r.pr)
     if (!rows.length) continue
     if (rows.length > 1) api.prStackItem(s, rows)
     for (const r of rows) {

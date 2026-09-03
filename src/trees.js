@@ -1,7 +1,7 @@
 // The three TreeDataProviders. Each one fetches, then hands rows to items.js.
 
 const vscode = require("vscode")
-const { listPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
+const { openPrs, prDetails, stacksOf, status, uncommittedPlan } = require("./but")
 const { listPlans } = require("./plans")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
@@ -234,7 +234,14 @@ class BranchTree extends Tree {
         // a readdir whose parses are already cached by mtime, so it costs a
         // stat per plan beside a status call that costs 230ms
         const [st, plans] = await Promise.all([status(root), listPlans(root)])
-        const stacks = stacksOf(st, this.overrides)
+        // the PR titles name the stacks, and `gh` is network: draw with what
+        // has arrived and repaint once when the list lands
+        const prs = openPrs.arrived()
+        if (!prs)
+            this.awaitingPrs ??= openPrs(root)
+                .then(() => this.changed.fire(), () => {})
+                .finally(() => (this.awaitingPrs = undefined))
+        const stacks = stacksOf(st, this.overrides, prs)
         const files = await branchFiles(root, stacks)
         this.overlap = overlapMap(files)
         this.where = positions(stacks)
@@ -299,7 +306,7 @@ class PrTree extends Tree {
     }
 
     refresh() {
-        this.cache = undefined
+        openPrs.invalidate()
         this.threads = undefined
         super.refresh()
     }
@@ -309,9 +316,7 @@ class PrTree extends Tree {
         if (!root) return []
         if (node) return node.prs?.map(prItem) ?? []
         try {
-            // the promise is what's cached, not its result: two overlapping
-            // refreshes would otherwise both get past the await and fetch twice
-            const prs = await (this.cache ??= listPrs(root))
+            const prs = await openPrs(root)
             // threads and conflict state cost another round trip and only ever
             // change a circle, so don't hold the rows for them — fill the same
             // PR objects in the background and repaint. `changed.fire()`, not
@@ -320,22 +325,19 @@ class PrTree extends Tree {
                 .catch(() => {})
                 .then(() => this.changed.fire())
 
-            const stacks = stacksOf(await status(root), this.overrides)
-            const byBranch = new Map(prs.map((p) => [p.headRefName, p]))
+            const stacks = stacksOf(await status(root), this.overrides, prs)
 
             const rows = []
             for (const stack of stacks) {
                 // bottom-first: the branch nearest master is the one that lands next
                 const prs = stack.branches
-                    .map((b) => ({ branch: b, pr: byBranch.get(b.name) }))
+                    .map((b) => ({ branch: b, pr: b.pr }))
                     .filter((r) => r.pr)
                 if (!prs.length) continue
                 rows.push(prs.length === 1 ? prItem(prs[0]) : prStackItem(stack, prs))
             }
             return rows
         } catch (e) {
-            // a cached rejection would keep failing until a manual refresh
-            this.cache = undefined
             vscode.window.showErrorMessage(
                 `but-review: could not list pull requests (${e.message.split("\n")[0]})`
             )
