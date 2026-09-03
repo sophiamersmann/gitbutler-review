@@ -567,6 +567,50 @@ const liveBranch = (names, where) =>
         .filter((live) => live.at)
         .sort(byRank)[0]
 
+const PINNED_PLANS = "pinnedPlans"
+
+/** The plans pinned by hand, by name. Names of plans no longer there are dropped
+ *  from the store as they are met, so a deleted plan leaves nothing behind. */
+function pinnedPlans(store, plans) {
+    const names = new Set(store.get(PINNED_PLANS) ?? [])
+    const kept = plans.filter((p) => names.has(p.name))
+    if (kept.length !== names.size)
+        store.set(PINNED_PLANS, kept.map((p) => p.name))
+    return new Set(kept)
+}
+
+function setPlanPinned(store, name, pinned) {
+    const names = new Set(store.get(PINNED_PLANS) ?? [])
+    if (pinned) names.add(name)
+    else names.delete(name)
+    store.set(PINNED_PLANS, [...names])
+}
+
+const PARKED_PLANS = "parkedPlans"
+
+/** Live plans unpinned by hand, each for as long as the branch that made it
+ *  live stays applied: the entry names the branch, and is dropped once `where`
+ *  no longer has it, so reapplying the branch pins the plan again. */
+function parkedPlans(store, live, where) {
+    const entries = store.get(PARKED_PLANS) ?? []
+    const kept = entries.filter((e) => where.has(e.branch))
+    if (kept.length !== entries.length) store.set(PARKED_PLANS, kept)
+    return new Set(
+        [...live]
+            .filter(([plan, l]) =>
+                kept.some((e) => e.name === plan.name && e.branch === l.branch)
+            )
+            .map(([plan]) => plan)
+    )
+}
+
+function setPlanParked(store, name, branch, parked) {
+    const rest = (store.get(PARKED_PLANS) ?? []).filter(
+        (e) => !(e.name === name && e.branch === branch)
+    )
+    store.set(PARKED_PLANS, parked ? [...rest, { name, branch }] : rest)
+}
+
 /** Plans with a branch applied right now, each carrying the phase that names it.
  *  Liveness is derived, so a merged branch drops its own plan's branch label
  *  with nothing to update. */
@@ -633,4 +677,4 @@ function planProgress(plan) {
     return `${items.filter((i) => i.done).length}/${items.length}`
 }
 
-module.exports = { isHeaderLine, liveBranch, livePlans, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
+module.exports = { isHeaderLine, liveBranch, livePlans, pinnedPlans, setPlanPinned, parkedPlans, setPlanParked, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }

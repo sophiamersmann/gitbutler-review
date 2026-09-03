@@ -6,9 +6,9 @@ const { stacksOf, status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
 const { BASE, DECORATION, FILE, PR } = require("./src/items")
-const { committedMode, layoutKey, nextHunk, sharedWords, stackKey, stackKeys, stackName } = require("./src/model")
+const { committedMode, layoutKey, nextHunk, setPlanParked, setPlanPinned, sharedWords, stackKey, stackKeys, stackName } = require("./src/model")
 const { createPlan, listPlans, plansRoot, writePlanLink } = require("./src/plans")
-const { BranchTree, PlanTree, PrTree, UncommittedTree } = require("./src/trees")
+const { BranchTree, PlanTree, PrTree, UncommittedTree, planListing } = require("./src/trees")
 
 function activate(context) {
     // workspaceState, so ticks and layout overrides are per-repo and survive a
@@ -55,29 +55,41 @@ function activate(context) {
     const dirtyView = vscode.window.createTreeView("butReview.uncommitted", {
         treeDataProvider: dirty,
     })
-    const plans = new PlanTree()
-    const plansView = vscode.window.createTreeView("butReview.plans", {
-        treeDataProvider: plans,
-    })
-    context.subscriptions.push(
-        plansView.onDidExpandElement((e) => plans.setOpen(e.element.plan, true)),
-        plansView.onDidCollapseElement((e) =>
-            plans.setOpen(e.element.plan, false)
+    // Two views over one listing: the plans pinned by hand or by an applied
+    // branch, then the rest. Paired with their views, since a row is revealed
+    // through the view that holds it.
+    const planViews = [true, false].map((pinned) => {
+        const tree = new PlanTree(pinned, store)
+        const view = vscode.window.createTreeView(
+            pinned ? "butReview.pinnedPlans" : "butReview.plans",
+            { treeDataProvider: tree }
         )
-    )
+        return [tree, view]
+    })
+    const planTrees = planViews.map(([tree]) => tree)
     let refreshTimer
     let plansTimer
     let plansWatcher
 
     // Hidden without a plans directory, since `plans/` is one person's
-    // convention rather than a GitButler one.
+    // convention rather than a GitButler one. The Pinned view is hidden while
+    // nothing is pinned, so nothing renders an empty box — which means its own
+    // getChildren can't be what discovers the state.
     const syncPlans = async () => {
         const root = repoRoot()
+        const dir = root ? await plansRoot(root) : undefined
+        const listing = dir ? await planListing(root, store) : undefined
+        vscode.commands.executeCommand("setContext", "butReview.hasPlans", !!dir)
         vscode.commands.executeCommand(
             "setContext",
-            "butReview.hasPlans",
-            root ? !!(await plansRoot(root)) : false
+            "butReview.hasPinnedPlans",
+            !!listing && listing.live.size + listing.pinned.size > 0
         )
+    }
+
+    function refreshPlans() {
+        for (const tree of planTrees) tree.refresh()
+        syncPlans()
     }
 
     // Its own watcher and its own timer, repainting the two views that read
@@ -94,9 +106,8 @@ function activate(context) {
         const touched = () => {
             clearTimeout(plansTimer)
             plansTimer = setTimeout(() => {
-                plans.refresh()
+                refreshPlans()
                 tree.refresh()
-                syncPlans()
             }, 500)
         }
         plansWatcher.onDidCreate(touched)
@@ -323,7 +334,9 @@ function activate(context) {
             if (doc.uri.scheme === BASE) baseChanged.fire(doc.uri)
         tree.refresh()
         dirty.refresh()
-        plans.refresh()
+        // applying or unapplying a branch is what moves a plan between the two
+        // Plans views
+        refreshPlans()
         // A PR row's CI circle comes from `but status`, which the two views
         // above just read — so repaint it for free. `changed.fire()`, not
         // `refresh()`: the reviews and threads behind it are network, and
@@ -454,7 +467,7 @@ function activate(context) {
             tree.refresh()
         }),
         vscode.window.registerTreeDataProvider("butReview.prs", prs),
-        plansView,
+        ...planViews.map(([, view]) => view),
         dirtyView,
         { dispose: () => plansWatcher?.dispose() },
 
@@ -463,8 +476,7 @@ function activate(context) {
         vscode.workspace.onDidChangeConfiguration((e) => {
             if (!e.affectsConfiguration("butReview.plansDirectory")) return
             watchPlans()
-            syncPlans()
-            plans.refresh()
+            refreshPlans()
         }),
 
         vscode.commands.registerCommand(
@@ -472,15 +484,16 @@ function activate(context) {
             async (file, line = 0, expand) => {
                 // A plan row opens its phases as well as its file: they are half
                 // of what the row is for, and a click that opened only the
-                // document left them behind the twistie. Clicking a row that is
-                // already open closes it, so the row toggles the way its twistie
-                // does. Before the editor, so it is still the tree that has
-                // focus. `select` and `focus` off — the row was clicked, so it
-                // is already both.
-                const node = expand && !plans.close(expand) && plans.rowFor.get(expand)
+                // document left them behind the twistie. Only ever opens: the
+                // twistie is what closes a row. Before the editor, so it is
+                // still the tree that has focus. `select` and `focus` off — the
+                // row was clicked, so it is already both.
+                const holder =
+                    expand && planViews.find(([t]) => t.rowFor.has(expand))
+                const node = holder && holder[0].rowFor.get(expand)
                 if (node)
                     await Promise.resolve(
-                        plansView.reveal(node, {
+                        holder[1].reveal(node, {
                             expand: true,
                             select: false,
                             focus: false,
@@ -505,7 +518,7 @@ function activate(context) {
                     recursive: true,
                     useTrash: true,
                 })
-                plans.refresh()
+                refreshPlans()
                 vscode.window.showInformationMessage(
                     `Deleted ${plan.name}. It is in the trash.`
                 )
@@ -528,7 +541,7 @@ function activate(context) {
                     : (node.stage ?? node.plan).file
                 if (!file) return
                 await writePlanLink(file, [branch])
-                plans.refresh()
+                refreshPlans()
                 tree.refresh()
             } catch (e) {
                 vscode.window.showErrorMessage(`but-review: ${e.message}`)
@@ -546,7 +559,7 @@ function activate(context) {
                 })
                 if (!title?.trim()) return
                 const file = await createPlan(root, title.trim(), branch)
-                plans.refresh()
+                refreshPlans()
                 tree.refresh()
                 await vscode.commands.executeCommand("butReview.openPlan", file)
             } catch (e) {
@@ -554,9 +567,22 @@ function activate(context) {
             }
         }),
 
-        vscode.commands.registerCommand("butReview.refreshPlans", () => {
-            plans.refresh()
-            syncPlans()
+        vscode.commands.registerCommand("butReview.refreshPlans", refreshPlans),
+
+        // A live plan is pinned by its branch, so pinning one back means
+        // unparking it, and unpinning one parks it for as long as that branch
+        // is applied.
+        vscode.commands.registerCommand("butReview.pinPlan", (node) => {
+            if (node.live)
+                setPlanParked(store, node.plan.name, node.live.branch, false)
+            else setPlanPinned(store, node.plan.name, true)
+            refreshPlans()
+        }),
+        vscode.commands.registerCommand("butReview.unpinPlan", (node) => {
+            if (node.live)
+                setPlanParked(store, node.plan.name, node.live.branch, true)
+            setPlanPinned(store, node.plan.name, false)
+            refreshPlans()
         }),
 
         // A stack has no name of its own, so the one shown is read off the

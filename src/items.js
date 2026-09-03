@@ -607,20 +607,18 @@ function churn(hunks) {
 /** A plan: the title it gives itself, how far through it is, and when it was
  *  last touched. The tooltip carries the opening paragraph, which is most of
  *  what tells two plans on the same topic apart. */
-function planItem(plan, live, shut = 0) {
+function planItem(plan, { live, pinned = false } = {}) {
     const item = new vscode.TreeItem(
         plan.title,
         planRows(plan).length
             ? vscode.TreeItemCollapsibleState.Collapsed
             : vscode.TreeItemCollapsibleState.None
     )
-    item.id = `plan:${plan.name}${shut ? `:${shut}` : ""}`
+    item.id = `plan:${plan.name}`
     // an age is what a plan has instead of a branch, not as well as one
     item.description = [planProgress(plan), live ? live.branch : ago(plan.mtime)]
         .filter(Boolean)
         .join("  \u00b7  ")
-    // the colour is the branch's: a live plan keeps its place in the order, so
-    // the icon is what picks it out
     item.iconPath = live
         ? new vscode.ThemeIcon(
               "checklist",
@@ -636,10 +634,13 @@ function planItem(plan, live, shut = 0) {
             .filter(Boolean)
             .join("  \n")
     )
-    // the phase you are on, not line 1 of a 476-line overview
-    item.command = openPlan(live?.stage?.file ?? plan.file, 0, plan.name)
-    item.contextValue = "plan"
+    item.command = openPlan(plan.file, 0, plan.name)
+    // the hover button is unpin in the Pinned view and pin in the other, which
+    // the context value has to say
+    item.contextValue = pinned ? "plan:pinned" : "plan"
     item.plan = plan
+    // what pin and unpin act on: a live plan is parked, another is pinned
+    item.live = live
     return item
 }
 

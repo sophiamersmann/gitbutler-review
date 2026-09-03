@@ -164,6 +164,11 @@ const containers = contributes.viewsContainers.activitybar
 for (const { icon } of containers)
     if (!fs.existsSync(path.join(__dirname, icon)))
         problems.push(`container icon missing: ${icon}`)
+// a command icon that is a file rather than a codicon
+for (const { command, icon } of contributes.commands)
+    for (const file of typeof icon === "object" ? Object.values(icon) : [])
+        if (!fs.existsSync(path.join(__dirname, file)))
+            problems.push(`icon missing for ${command}: ${file}`)
 // a views key naming no container is a whole view VSCode silently never draws
 gripe(
     "holds views but is not a container",
@@ -295,8 +300,13 @@ const overrides = new Map()
     const was = stub.workspace.workspaceFolders[0].uri.fsPath
     stub.workspace.workspaceFolders[0].uri.fsPath = fixture
     const plans = await api.listPlans(fixture)
-    const tree = new PlanTree()
+    // nothing of the fixture's is applied, so the rest is the whole list
+    const state = new Map()
+    const planStore = { get: (k) => state.get(k), set: (k, v) => state.set(k, v) }
+    const tree = new PlanTree(false, planStore)
+    const pinnedTree = new PlanTree(true, planStore)
     const top = await tree.getChildren()
+    const pinnedTop = await pinnedTree.getChildren()
     const by = (title) => plans.find((p) => p.title === title)
     const rowsOf = async (title) =>
         await tree.getChildren(top.find((r) => r.label === title))
@@ -319,17 +329,27 @@ const overrides = new Map()
     const tasked = by("A plan with tasks")
     const taskRows = await rowsOf("A plan with tasks")
     const stageRows = await rowsOf("A plan in a directory")
-    // the click toggles: closing is a row coming back under an id VSCode has
-    // never seen, so it has to be asked for the rows again
-    const closedShut = tree.close(tasked.name)
-    tree.setOpen(tasked, true)
-    const closedOpen = tree.close(tasked.name)
-    const toggled = await tree.getChildren()
+    // pinning, through the store the trees share
+    api.setPlanPinned(planStore, dirPlan.name, true)
+    const pinnedRows = await pinnedTree.getChildren()
+    const restRows = await tree.getChildren()
+    api.setPlanPinned(planStore, dirPlan.name, false)
+    const unpinnedRows = await tree.getChildren()
+    api.setPlanPinned(planStore, "2020-01-01-long-gone.md", true)
+    await pinnedTree.getChildren()
+
+    // parking, against handed-in ranks like the promotion cases above
+    const liveMap = (where) => new Map(api.livePlans(plans, where).map((l) => [l.plan, l]))
+    api.setPlanParked(planStore, dirPlan.name, "second-phase", true)
+    const parkedNow = api.parkedPlans(planStore, liveMap(at("second-phase")), at("second-phase"))
+    const parkedElsewhere = api.parkedPlans(planStore, liveMap(at("whole-plan", "second-phase")), at("whole-plan", "second-phase"))
+    const parkedAfter = api.parkedPlans(planStore, liveMap(at("with-tasks")), at("with-tasks"))
 
     const cases = [
         [plans.length, 18, "18 plans: twelve filler, five files of their own and one directory — and never the .patch"],
         [plans[0].title, "A plan in a directory", "newest first, and a directory is dated by the newest file in it"],
         [top.length, 18, "every plan is a top-level row, finished or not"],
+        [pinnedTop.length, 0, "and with no branch applied and nothing pinned, the Pinned view has none of them"],
         [top.map((r) => r.label).join(" | ") === plans.map((p) => p.title).join(" | "), true, "in the order the list has them, newest first"],
         [top.every((r) => r.contextValue === "plan"), true, "and every row is a plan row, hover buttons and all"],
         [dirPlan.stages.map((s) => s.name).join(" "), "phase-1.md phase-2.md phase-3.md", "phases in the order the overview links them, ./ and #anchor and all"],
@@ -376,17 +396,26 @@ const overrides = new Map()
         [liveOnes(at("second-phase", "with-tasks")).length, 2, "one live entry per plan, however many of its branches are applied"],
         [liveOnes(new Map()).length, 0, "nothing applied makes nothing live"],
         [api.liveBranch(["second-phase", "first-phase"], at("second-phase", "first-phase"))?.branch, "second-phase", "of several applied, the one nearest the top of its stack"],
-        [api.planItem(dirPlan, api.livePlans(plans, at("second-phase"))[0]).description, "2/3  \u00b7  second-phase", "a live row says its branch where it said an age"],
-        [api.planItem(dirPlan, api.livePlans(plans, at("second-phase"))[0]).command.arguments[0].endsWith("phase-2.md"), true, "and opens the phase you are on"],
-        [api.planItem(dirPlan, api.livePlans(plans, at("second-phase"))[0]).iconPath.color?.id, "butReview.livePlanIcon", "and its icon takes the live colour"],
+        [api.planItem(dirPlan, { live: api.livePlans(plans, at("second-phase"))[0] }).description, "2/3  \u00b7  second-phase", "a live row says its branch where it said an age"],
+        [api.planItem(dirPlan, { live: api.livePlans(plans, at("second-phase"))[0] }).command.arguments[0].endsWith("overview.md"), true, "and still opens the overview, with the phase a row below"],
+        [api.planItem(dirPlan, { live: api.livePlans(plans, at("second-phase"))[0] }).iconPath.color?.id, "butReview.livePlanIcon", "and its icon takes the live colour"],
         [api.planItem(dirPlan).iconPath.color, undefined, "which one that is not live does not"],
-        [api.planItem(dirPlan).command.arguments[0].endsWith("overview.md"), true, "while one that is not live opens its overview"],
+        [api.planItem(dirPlan).command.arguments[0].endsWith("overview.md"), true, "as one that is not live does"],
+        [api.planItem(dirPlan).contextValue, "plan", "a row in the other view offers the pin"],
+        [api.planItem(dirPlan, { pinned: true }).contextValue, "plan:pinned", "and one in the Pinned view the unpin"],
+        [parkedNow.has(dirPlan), true, "unpinning a live plan parks it"],
+        [parkedElsewhere.has(dirPlan), false, "for the branch that made it live, not another"],
+        [parkedAfter.has(dirPlan), false, "and the parking expires once that branch is no longer applied"],
+        [state.get("parkedPlans").length, 0, "leaving nothing in the store"],
+        [pinnedRows.map((r) => r.label).join(" | "), "A plan in a directory", "a pinned plan moves to the Pinned view"],
+        [pinnedRows[0]?.contextValue, "plan:pinned", "as a pinned row"],
+        [restRows.length, 17, "and out of the other one"],
+        [restRows.some((r) => r.plan === dirPlan), false, "which no longer has it"],
+        [unpinnedRows.length, 18, "unpinning puts it back"],
+        [state.get("pinnedPlans").join(","), "", "and a pin on a plan that is gone is dropped when the list is next read"],
         [stageRows[0].description, "first-phase", "a phase row carries its own branch"],
         [by("No title of its own")?.name, "2026-02-04-no-title-of-its-own.md", "a plan with no heading is named by its file, less the date"],
-        [closedShut, false, "a click on a row nothing has opened closes nothing"],
-        [closedOpen, true, "and on one VSCode is holding open, it closes it"],
-        [top.find((r) => r.plan.name === tasked.name).id, "plan:2026-02-01-with-tasks.md", "a row VSCode has not been asked to close keeps its id"],
-        [toggled.find((r) => r.plan.name === tasked.name).id, "plan:2026-02-01-with-tasks.md:1", "and the closed one comes back under one VSCode has never seen, which is what collapses it"],
+        [top.find((r) => r.plan.name === tasked.name).id, "plan:2026-02-01-with-tasks.md", "a plan row's id is its name, so VSCode keeps it open across repaints"],
     ]
     const bad = cases.filter(([got, want]) => got !== want)
     for (const [got, want, what] of bad)

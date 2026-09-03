@@ -113,8 +113,8 @@ report that instead.
 
 ### Plans
 
-Its own icon in the activity bar. The markdown files in `plans/`, newest first. It
-exists because that directory is invisible to everything else: `plans/` is gitignored,
+Its own icon in the activity bar. The markdown files in `plans/`, in two sections: the plans
+pinned by hand or by an applied branch, then all the others, each newest first. It exists because that directory is invisible to everything else: `plans/` is gitignored,
 VSCode's search skips ignored files by default, so a plan is in neither the Source Control
 view nor Ctrl+Shift+F.
 
@@ -123,15 +123,21 @@ Rows are titled by the plan's own `#` heading rather than its filename, so
 observer decorator from the legends". The tooltip carries its opening paragraph, which is
 most of what tells two plans on the same topic apart.
 
-**A plan whose branch is applied says that branch** where it would otherwise say its age,
-and clicking it opens the phase you are on rather than line 1 of a 476-line overview. That
-is the whole of what the `Branch:` line below buys, and it is derived: a plan is live because
-a branch it names is applied right now, so merging a branch drops the label with nothing to
-update. It does not move the row: a live plan sits wherever its mtime puts it.
+**A plan whose branch is applied sits in the Pinned section** and says that branch where it
+would otherwise say its age. That is the whole of what the `Branch:` line below buys, and it is
+derived: a plan is live because a branch it names is applied right now, so merging a branch
+moves its plan out of Pinned with nothing to update. **Pin Plan**, on hover, puts any other
+plan there by hand until you unpin it. Unpinning a live plan parks it in Other for as long as
+that branch stays applied — a branch waiting on review need not sit at the top — and the
+parking expires with the branch, so applying it again pins the plan again. Both are kept in
+VSCode's workspace state rather than in the file, so neither writes into a plan an agent may
+be editing. The section
+is hidden while nothing is pinned, and the Other section drops its header while it is the
+only one showing.
 
-**Every plan, newest first.** The list is flat: how far through a plan is shows in its
-`11/13` rather than in which folder it sits under, so nothing has to be filed anywhere and
-text search is the way into the tail of it.
+**Within a section, newest first.** The list is flat: how far through a plan is shows in
+its `11/13` rather than in which folder it sits under, so nothing has to be filed anywhere
+and text search is the way into the tail of it.
 
 Newest is by mtime, which is not the date in the filename: the convention keeps a plan's
 original date across every revision, so the name says when the work started and the mtime
@@ -183,10 +189,8 @@ nobody asked for. Checklists quoted inside fenced code blocks aren't counted eit
 about plans would otherwise be full of somebody else's phases.
 
 Clicking a plan opens its file **and** its phases. They are half of what the row is for, and
-a click that opened only the document left them behind the twistie. Click an open row and it
-closes, so the row toggles the way its twistie does — VSCode offers no way to collapse a row
-([vscode#40179](https://github.com/microsoft/vscode/issues/40179)), so the row comes back
-under an id it has never seen instead.
+a click that opened only the document left them behind the twistie. A click only ever opens;
+the twistie is what closes a row.
 
 **Delete Plan**, on hover, takes a directory plan as the whole directory. It goes to the trash rather than being unlinked — `plans/` is gitignored,
 so no history could give one back — and the trash is why it doesn't stop to ask.
@@ -196,9 +200,9 @@ rather than checkboxes: ticking one would mean writing `- [x]` back into a file 
 be editing in the same second, and for a directory plan, writing to the overview from a row
 rendered out of it.
 
-The view is hidden unless the directory exists, which takes its activity-bar icon with it:
-VSCode registers an extension's containers with `hideIfEmpty`, so a container whose only view
-is hidden is hidden too. `butReview.plansDirectory` says which directory to look for.
+Both views are hidden unless the directory exists, which takes the activity-bar icon with
+them: VSCode registers an extension's containers with `hideIfEmpty`, so a container whose
+every view is hidden is hidden too. `butReview.plansDirectory` says which directory to look for.
 
 ### Changes
 

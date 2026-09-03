@@ -6,7 +6,7 @@ const { listPlans } = require("./plans")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
 const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, filesGroupItem, fileItem, folderItem, hunkItem, planItem, planLinkItem, planStageItem, planTaskItem, plansGroupItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
-const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, layoutFor, livePlans, planIndex, planRows, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
+const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, layoutFor, livePlans, parkedPlans, pinnedPlans, planIndex, planRows, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -344,42 +344,23 @@ class PrTree extends Tree {
     }
 }
 
-/** Plan documents, newest first. A plan whose branch is applied says the branch
- *  where the others say their age, and keeps its place in the order. */
+/** Plan documents, newest first. Two of these back the two Plans views: the
+ *  pinned one holds the plans pinned by hand and those whose branch is applied
+ *  and not unpinned by hand, the other holds the rest. A live plan says its
+ *  branch where the others say their age, whichever view it is in. */
 class PlanTree extends Tree {
-    constructor() {
+    constructor(pinned, store) {
         super()
+        this.pinned = pinned
+        this.store = store
         // plan name -> its row, so a click can hand the view the node to expand.
         // Rebuilt with the rows, since a stale one is a row VSCode no longer has
         this.rowFor = new Map()
-        // which plans VSCode is holding open, so a click on one can close it,
-        // and how many times each has been closed. Expansion is VSCode's state,
-        // so the view has to say
-        this.open = new Set()
-        this.shut = new Map()
     }
 
     refresh() {
         this.rowFor.clear()
         super.refresh()
-    }
-
-    setOpen(plan, open) {
-        if (open) this.open.add(plan.name)
-        else this.open.delete(plan.name)
-    }
-
-    /** Closes the row for `name`, and says whether there was one open to close.
-     *  Fires the whole view rather than the row: the count that collapses it
-     *  goes in the row's own id, so its parent is what has to rebuild it, and a
-     *  plan's parent is the root. See `BranchTree#close` for why an id is what it
-     *  takes. */
-    close(name) {
-        if (!this.open.has(name)) return false
-        this.open.delete(name)
-        this.shut.set(name, (this.shut.get(name) ?? 0) + 1)
-        this.changed.fire()
-        return true
     }
 
     // reveal() is the only way to open a row from here, and it needs this. Every
@@ -395,11 +376,11 @@ class PlanTree extends Tree {
             if (node?.plan) return this.rows(node.plan)
             if (node) return []
 
-            const plans = await listPlans(root)
-            const live = livePlans(plans, await appliedBranches(root))
-            return plans.map((p) =>
-                this.row(p, live.find((l) => l.plan === p))
-            )
+            const { plans, live, pinned, parked } = await planListing(root, this.store)
+            const inPinned = (p) => pinned.has(p) || (live.has(p) && !parked.has(p))
+            return plans
+                .filter((p) => inPinned(p) === this.pinned)
+                .map((p) => this.row(p, live.get(p)))
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
@@ -407,7 +388,7 @@ class PlanTree extends Tree {
     }
 
     row(plan, live) {
-        const item = planItem(plan, live, this.shut.get(plan.name))
+        const item = planItem(plan, { live, pinned: this.pinned })
         this.rowFor.set(plan.name, item)
         return item
     }
@@ -423,12 +404,26 @@ class PlanTree extends Tree {
     }
 }
 
+/** Every plan; for each whose branch is applied, what makes it live; and which
+ *  are pinned, or as live plans unpinned, by hand. */
+async function planListing(root, store) {
+    const plans = await listPlans(root)
+    const where = await appliedBranches(root)
+    const live = new Map(livePlans(plans, where).map((l) => [l.plan, l]))
+    return {
+        plans,
+        live,
+        pinned: pinnedPlans(store, plans),
+        parked: parkedPlans(store, live, where),
+    }
+}
+
 /** Where each applied branch sits, which is what says a plan is live. A repo
  *  GitButler does not manage still has plans, so a failed status costs the
- *  branch labels and nothing more. */
+ *  live plans their place in the pinned view and nothing more. */
 const appliedBranches = (root) =>
     status(root)
         .then((st) => positions(stacksOf(st)))
         .catch(() => new Map())
 
-module.exports = { BranchTree, PlanTree, UncommittedTree, PrTree }
+module.exports = { BranchTree, PlanTree, UncommittedTree, PrTree, planListing }

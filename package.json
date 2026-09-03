@@ -121,8 +121,14 @@
             ],
             "butReviewPlans": [
                 {
+                    "id": "butReview.pinnedPlans",
+                    "name": "Pinned",
+                    "when": "butReview.hasPlans && butReview.hasPinnedPlans",
+                    "icon": "icon-plans.svg"
+                },
+                {
                     "id": "butReview.plans",
-                    "name": "Plans",
+                    "name": "Other",
                     "when": "butReview.hasPlans",
                     "icon": "icon-plans.svg"
                 }
@@ -252,6 +258,21 @@
                 "icon": "$(refresh)"
             },
             {
+                "command": "butReview.pinPlan",
+                "title": "Pin Plan",
+                "category": "GitButler Review",
+                "icon": "$(pinned)"
+            },
+            {
+                "command": "butReview.unpinPlan",
+                "title": "Unpin Plan",
+                "category": "GitButler Review",
+                "icon": {
+                    "light": "icon-unpin-light.svg",
+                    "dark": "icon-unpin-dark.svg"
+                }
+            },
+            {
                 "command": "butReview.deletePlan",
                 "title": "Delete Plan",
                 "category": "GitButler Review",
@@ -341,6 +362,14 @@
                     "when": "false"
                 },
                 {
+                    "command": "butReview.pinPlan",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.unpinPlan",
+                    "when": "false"
+                },
+                {
                     "command": "butReview.deletePlan",
                     "when": "false"
                 },
@@ -377,7 +406,7 @@
                 },
                 {
                     "command": "butReview.refreshPlans",
-                    "when": "view == butReview.plans",
+                    "when": "view == butReview.plans || view == butReview.pinnedPlans",
                     "group": "navigation"
                 }
             ],
@@ -394,13 +423,23 @@
                 },
                 {
                     "command": "butReview.linkPlan",
-                    "when": "view == butReview.plans && viewItem =~ /^plan(Stage)?$/",
+                    "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem =~ /^plan(:pinned|Stage)?$/",
                     "group": "1_modify"
                 },
                 {
-                    "command": "butReview.deletePlan",
-                    "when": "view == butReview.plans && viewItem == plan",
+                    "command": "butReview.pinPlan",
+                    "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem == plan",
                     "group": "inline@1"
+                },
+                {
+                    "command": "butReview.unpinPlan",
+                    "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem == plan:pinned",
+                    "group": "inline@1"
+                },
+                {
+                    "command": "butReview.deletePlan",
+                    "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem =~ /^plan(:pinned)?$/",
+                    "group": "inline@2"
                 },
                 {
                     "command": "butReview.absorbOne",
