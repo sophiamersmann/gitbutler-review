@@ -19,6 +19,15 @@ function activate(context) {
     }
     const tree = new BranchTree(store)
     const prs = new PrTree(store)
+    // A `when` clause reads context keys, not settings, so the setting is
+    // mirrored into one. Hiding every view hides the container and its icon.
+    const syncEnabled = () =>
+        vscode.commands.executeCommand(
+            "setContext",
+            "butReview.enabled",
+            cfg().get("enabled", true)
+        )
+    syncEnabled()
     // Manual checkbox state: a folder row carries the review of every file
     // beneath it, so one event is the whole subtree. Left to VSCode, a folder
     // you had collapsed would tick nothing — it only propagates to children it
@@ -474,6 +483,7 @@ function activate(context) {
         // the directory is a setting, so the watcher and the view's visibility
         // both have to follow it rather than the value read at activation
         vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration("butReview.enabled")) syncEnabled()
             if (!e.affectsConfiguration("butReview.plansDirectory")) return
             watchPlans()
             refreshPlans()

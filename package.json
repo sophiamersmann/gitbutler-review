@@ -110,12 +110,13 @@
                 {
                     "id": "butReview.branches",
                     "name": "Branches",
+                    "when": "butReview.enabled",
                     "icon": "icon-stack3.svg"
                 },
                 {
                     "id": "butReview.uncommitted",
                     "name": "Changes",
-                    "when": "butReview.hasUncommitted",
+                    "when": "butReview.enabled && butReview.hasUncommitted",
                     "icon": "icon-stack3.svg"
                 }
             ],
@@ -123,13 +124,13 @@
                 {
                     "id": "butReview.pinnedPlans",
                     "name": "Pinned",
-                    "when": "butReview.hasPlans && butReview.hasPinnedPlans",
+                    "when": "butReview.enabled && butReview.hasPlans && butReview.hasPinnedPlans",
                     "icon": "icon-plans.svg"
                 },
                 {
                     "id": "butReview.plans",
                     "name": "Other",
-                    "when": "butReview.hasPlans",
+                    "when": "butReview.enabled && butReview.hasPlans",
                     "icon": "icon-plans.svg"
                 }
             ],
@@ -137,6 +138,7 @@
                 {
                     "id": "butReview.prs",
                     "name": "Pull Requests",
+                    "when": "butReview.enabled",
                     "icon": "icon-pull-request.svg"
                 }
             ]
@@ -493,6 +495,11 @@
         "configuration": {
             "title": "GitButler Review",
             "properties": {
+                "butReview.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Show the views and their activity-bar icons. Set to `false` in a workspace's settings to keep the extension out of that window."
+                },
                 "butReview.ignoredChecks": {
                     "type": "array",
                     "items": {

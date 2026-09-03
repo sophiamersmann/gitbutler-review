@@ -286,6 +286,7 @@ On Linux or Windows that prepend is harmless, but you may need to adjust it if `
 
 | Setting | Default | What it does |
 | --- | --- | --- |
+| `butReview.enabled` | `true` | Whether the views and their activity-bar icons show at all. `false` in a workspace's settings keeps the extension out of that window. |
 | `butReview.ignoredChecks` | `[]` | CI checks to exclude from a branch's status, matched as case-insensitive substrings. Useful for a slow or flaky job you never act on. |
 | `butReview.botReviewers` | `chatgpt-codex-connector`, `github-actions`, `copilot-pull-request-reviewer` | Reviewers whose approvals and comments don't count. Logins ending in `[bot]` are always ignored; Codex has no such suffix, hence this list. |
 | `butReview.fileLayout` | `tree` | `list` or `tree`. Overridable per branch from the branch row. |
