@@ -589,6 +589,19 @@ function activate(context) {
 
         vscode.commands.registerCommand("butReview.refreshPlans", refreshPlans),
 
+        // VSCode's own search, scoped to the plans directory. `plans/` is
+        // gitignored, and the ignore file is what keeps it out of Ctrl+Shift+F.
+        vscode.commands.registerCommand("butReview.searchPlans", async () => {
+            const root = repoRoot()
+            const dir = root ? await plansRoot(root) : undefined
+            if (!dir) return
+            await vscode.commands.executeCommand("workbench.action.findInFiles", {
+                filesToInclude: dir,
+                useExcludeSettingsAndIgnoreFiles: false,
+                showIncludesExcludes: true,
+            })
+        }),
+
         // A live plan is pinned by its branch, so pinning one back means
         // unparking it, and unpinning one parks it for as long as that branch
         // is applied.

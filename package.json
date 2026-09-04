@@ -254,6 +254,12 @@
                 "category": "GitButler Review"
             },
             {
+                "command": "butReview.searchPlans",
+                "title": "Search Plans\u2026",
+                "category": "GitButler Review",
+                "icon": "$(search)"
+            },
+            {
                 "command": "butReview.refreshPlans",
                 "title": "Refresh Plans",
                 "category": "GitButler Review",
@@ -417,9 +423,14 @@
                     "group": "navigation"
                 },
                 {
+                    "command": "butReview.searchPlans",
+                    "when": "view == butReview.plans || view == butReview.pinnedPlans",
+                    "group": "navigation@1"
+                },
+                {
                     "command": "butReview.refreshPlans",
                     "when": "view == butReview.plans || view == butReview.pinnedPlans",
-                    "group": "navigation"
+                    "group": "navigation@2"
                 }
             ],
             "view/item/context": [

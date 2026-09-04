@@ -116,7 +116,8 @@ report that instead.
 Its own icon in the activity bar. The markdown files in `plans/`, in two sections: the plans
 pinned by hand or by an applied branch, then all the others, each newest first. It exists because that directory is invisible to everything else: `plans/` is gitignored,
 VSCode's search skips ignored files by default, so a plan is in neither the Source Control
-view nor Ctrl+Shift+F.
+view nor Ctrl+Shift+F. The magnifier on the section header opens that same search scoped to
+`plans/` with ignore files switched off, seeded from the editor selection like Ctrl+Shift+F is.
 
 Rows are titled by the plan's own `#` heading rather than its filename, so
 `2026-08-25-legend-emphasis-props.md` reads "Make emphasis a legend render prop, drop the
