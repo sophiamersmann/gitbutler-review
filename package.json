@@ -275,6 +275,12 @@
                 }
             },
             {
+                "command": "butReview.copyPlanPath",
+                "title": "Copy Path",
+                "category": "GitButler Review",
+                "icon": "$(copy)"
+            },
+            {
                 "command": "butReview.deletePlan",
                 "title": "Delete Plan",
                 "category": "GitButler Review",
@@ -372,6 +378,10 @@
                     "when": "false"
                 },
                 {
+                    "command": "butReview.copyPlanPath",
+                    "when": "false"
+                },
+                {
                     "command": "butReview.deletePlan",
                     "when": "false"
                 },
@@ -439,9 +449,14 @@
                     "group": "inline@1"
                 },
                 {
+                    "command": "butReview.copyPlanPath",
+                    "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem =~ /^plan(:pinned|Stage)?$/",
+                    "group": "inline@2"
+                },
+                {
                     "command": "butReview.deletePlan",
                     "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem =~ /^plan(:pinned)?$/",
-                    "group": "inline@2"
+                    "group": "inline@3"
                 },
                 {
                     "command": "butReview.absorbOne",

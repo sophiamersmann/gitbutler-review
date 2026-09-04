@@ -537,6 +537,16 @@ function activate(context) {
             }
         }),
 
+        vscode.commands.registerCommand("butReview.copyPlanPath", async (node) => {
+            const { file } = node.stage ?? node.plan
+            const root = repoRoot()
+            const at = root ? path.relative(root, file) : file
+            await vscode.env.clipboard.writeText(at)
+            // the path rather than "Copied": a plan and its phases differ by the
+            // tail of one, and that is the part you are checking
+            vscode.window.setStatusBarMessage(`Copied ${at}`, 2000)
+        }),
+
         // The link is a line in the plan file, so both directions are a write to
         // it. Which picker you get is which end you started from.
         vscode.commands.registerCommand("butReview.linkPlan", async (node) => {

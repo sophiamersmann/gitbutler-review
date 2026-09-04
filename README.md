@@ -192,6 +192,12 @@ Clicking a plan opens its file **and** its phases. They are half of what the row
 a click that opened only the document left them behind the twistie. A click only ever opens;
 the twistie is what closes a row.
 
+**Copy Path**, on hover on a plan or a phase, copies that row's file relative to the repo
+root — the overview for a directory plan, the phase file for a phase — which is the form a
+plan is named in when you hand it to an agent. The status bar echoes the path for a
+couple of seconds: a toast would be a modal-shaped interruption for a two-key action, and
+the path is the part worth checking, since a plan and its phases differ only in the tail.
+
 **Delete Plan**, on hover, takes a directory plan as the whole directory. It goes to the trash rather than being unlinked — `plans/` is gitignored,
 so no history could give one back — and the trash is why it doesn't stop to ask.
 
