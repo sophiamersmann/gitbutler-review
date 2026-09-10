@@ -12,6 +12,10 @@ const FILE = "butfile" // butfile:/<path>?<status> — a file row, for decoratio
 
 const PR = "butpr" //     butpr:/<number>?<ci>      — a PR row, for decorations
 
+/** The `butpr` query of a row whose status you have ignored: it has no circle
+ *  to name, and the decoration is what dims it instead */
+const IGNORED = "ignored"
+
 const DECORATION = {
     A: ["A", "gitDecoration.addedResourceForeground"],
     M: ["M", "gitDecoration.modifiedResourceForeground"],
@@ -528,17 +532,28 @@ function prStackItem(stack, prs) {
     return item
 }
 
-function prItem(row) {
+function prItem(row, { ignored = false } = {}) {
     const { pr, branch } = row
     // not gated on isDraft: a draft with a review request is worth seeing
     const decision = humanDecision(pr)
     const ci = ciState(branch)
     const open = openThreads(pr)
-    const [circle, summary] = rollup(ci.state, decision, open, pr.conflicting)
+    const [circle, summary] = ignored
+        ? []
+        : rollup({
+              ci: ci.state,
+              decision,
+              open,
+              conflicting: pr.conflicting,
+              isDraft: pr.isDraft,
+          })
 
     const item = new vscode.TreeItem(branch.name)
-    // the circle itself is the badge; the tooltip below is what names it
-    item.resourceUri = uri(PR, String(pr.number), circle)
+    // the circle itself is the badge; the tooltip below is what names it. An
+    // ignored row takes a decoration too, for the dimming rather than a badge —
+    // an idle draft takes neither
+    const decoration = circle || (ignored ? IGNORED : undefined)
+    if (decoration) item.resourceUri = uri(PR, String(pr.number), decoration)
     // GitHub counts against the PR's base, which for a stacked PR is the branch
     // below it: this is the branch's own diff, not the stack's
     item.description = churn([{ adds: pr.additions, dels: pr.deletions }])
@@ -557,7 +572,10 @@ function prItem(row) {
             `[#${pr.number} ${pr.title}](${pr.url})`,
             `on \`${branch.name}\``,
             "",
-            `${circle}  **${summary}**`,
+            ...(circle ? [`${circle}  **${summary}**`] : []),
+            // the circle is what an ignored row drops, never the two lines
+            // under it — muting the alarm is not muting the facts
+            ...(ignored ? ["**Status ignored**"] : []),
             `CI: ${ci.label ?? "no checks"}`,
             `Review: ${decision ?? "none requested"}${pr.isDraft ? " · draft" : ""}${open ? ` · ${open} unresolved thread${open > 1 ? "s" : ""}` : ""}`,
             // otherwise a red dot on a PR with green CI and no changes
@@ -569,7 +587,8 @@ function prItem(row) {
     // no item.command: the row's two actions are the inline buttons, which read
     // this off the node
     item.url = pr.url
-    item.contextValue = "pr"
+    item.branch = branch // for "Ignore Status", which is keyed on the branch
+    item.contextValue = ignored ? "prIgnored" : "pr"
     return item
 }
 
@@ -740,4 +759,4 @@ const openPlan = (file, line, expand) => ({
     arguments: [file, line, expand],
 })
 
-module.exports = { BASE, FILE, PR, DECORATION, hunkKind, planItem, planLinkItem, planStageItem, planTaskItem, plansGroupItem, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, filesGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }
+module.exports = { BASE, FILE, IGNORED, PR, DECORATION, hunkKind, planItem, planLinkItem, planStageItem, planTaskItem, plansGroupItem, unplacedGroupItem, branchGroupItem, dirtyFileItem, hunkItem, stackItem, branchItem, wholeStackItem, commitsGroupItem, filesGroupItem, commitItem, folderItem, fileItem, prStackItem, prItem }

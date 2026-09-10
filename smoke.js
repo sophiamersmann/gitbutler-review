@@ -698,6 +698,25 @@ for (const s of api.stacksOf(st, undefined, prs)) {
     const bad = cases.filter(([got, want]) => got !== want)
     for (const [got, want, what] of bad)
         console.log(`PROBLEM  pr churn: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+
+    // ignoring a status drops the circle and nothing else: the row still says
+    // which checks are failing, or muting it would be a lie
+    const red = { name: "b", failing: ["build"], pending: [], passing: [] }
+    const pr = { number: 1, url: "", title: "t" }
+    const loud = api.prItem({ pr, branch: red })
+    const quiet = api.prItem({ pr, branch: red }, { ignored: true })
+    const muted = [
+        [loud.resourceUri.query, "🔴", "a loud row badges its circle"],
+        [loud.contextValue, "pr", "and offers Ignore Status"],
+        [quiet.resourceUri.query, "ignored", "an ignored row is dimmed, not badged"],
+        [quiet.contextValue, "prIgnored", "and offers Show Status"],
+        [quiet.tooltip.value.includes("🔴"), false, "no circle in its tooltip"],
+        [quiet.tooltip.value.includes("Status ignored"), true, "which says so"],
+        [quiet.tooltip.value.includes("\u2717 1 failing"), true, "and still names the failure"],
+    ]
+    for (const [got, want, what] of muted.filter(([g, w]) => g !== w))
+        console.log(`PROBLEM  ignore status: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (muted.some(([g, w]) => g !== w)) process.exitCode = 1
     if (bad.length) {
         process.exitCode = 1
         console.log(`         subtitles: ${JSON.stringify(subtitles.slice(0, 3))}`)
@@ -715,21 +734,26 @@ console.log(`ok: ${prRows} pr rows`)
             reviewThreads: threads,
         })
     const circle = (...threads) =>
-        api.rollup(undefined, "approved", open(...threads))[0]
+        api.rollup({ decision: "approved", open: open(...threads) })[0]
     const cases = [
         [circle(), "🟢", "approved, no threads"],
         [circle(thread(true, "reviewer")), "🟢", "all resolved"],
         [circle(thread(false, "reviewer")), "🟠", "one open"],
         [circle(thread(false, "codex[bot]")), "🟢", "bot threads don't count"],
         [circle(thread(false, "me")), "🟢", "your own threads don't count"],
-        [api.rollup(undefined, undefined, 2)[0], "⚪", "unreviewed stays as-is"],
+        [api.rollup({ open: 2 })[0], "⚪", "unreviewed stays as-is"],
+        // the one rung a draft does not get: every colour above it still shows,
+        // since a broken check is a broken check whether or not you are ready
+        [api.rollup({ isDraft: true })[0], undefined, "an idle draft gets no circle"],
+        [api.rollup({ ci: "failing", isDraft: true })[0], "🔴", "a draft still reddens"],
+        [api.rollup({ decision: "review requested", isDraft: true })[0], "🔵", "a draft can be out for review"],
         [String(open(thread(false, "a"), thread(false, "b"))), "2", "counted"],
         // a conflict is work of yours however healthy the rest of the PR looks,
         // and UNKNOWN — which is what GitHub says until it has computed the
         // answer — must not redden a PR that has only just been opened
-        [api.rollup("passing", "approved", 0, true)[0], "🔴", "conflicting beats approved"],
-        [api.rollup("passing", "approved", 0, false)[0], "🟢", "not conflicting is left alone"],
-        [api.rollup("passing", "approved", 0)[0], "🟢", "no conflict data yet reads as none"],
+        [api.rollup({ ci: "passing", decision: "approved", conflicting: true })[0], "🔴", "conflicting beats approved"],
+        [api.rollup({ ci: "passing", decision: "approved", conflicting: false })[0], "🟢", "not conflicting is left alone"],
+        [api.rollup({ ci: "passing", decision: "approved" })[0], "🟢", "no conflict data yet reads as none"],
     ]
     const bad = cases.filter(([got, want]) => got !== want)
     for (const [got, want, what] of bad)

@@ -5,22 +5,25 @@ const { cfg } = require("./exec")
 
 // One circle summarising the PR, not two independent signals: 🟢 is a surrogate
 // pair, so it already fills the 2-character badge budget on its own. Ordered by
-// what it asks of you, most demanding first.
+// who owes the work — you, then a reviewer, then CI — and the first match wins.
 const ROLLUP = [
     // conflicts belong here rather than on a colour of their own: the rung is
     // "work that is yours", and a conflict with the base is exactly that
-    ["🔴", "needs work", (ci, d, open, conflicting) => ci === "failing" || d === "changes requested" || conflicting],
+    ["🔴", "needs work", ({ ci, decision, conflicting }) => ci === "failing" || decision === "changes requested" || conflicting],
     // an approval with threads still open is a to-do of yours, so it outranks
     // CI: the tick on GitHub says done, the threads say otherwise
-    ["🟠", "approved, comments unresolved", (ci, d, open) => d === "approved" && open > 0],
-    ["🟡", "CI running", (ci) => ci === "running"],
-    ["🔵", "review requested", (ci, d) => d === "review requested"],
-    ["🟢", "approved", (ci, d) => d === "approved"],
-    ["⚪", "nothing pending", () => true],
+    ["🟠", "approved, comments unresolved", ({ decision, open }) => decision === "approved" && open > 0],
+    ["🔵", "review requested", ({ decision }) => decision === "review requested"],
+    ["🟡", "CI running", ({ ci }) => ci === "running"],
+    ["🟢", "approved", ({ decision }) => decision === "approved"],
+    // deliberately not a total fallback: a draft with nothing pending falls
+    // through to no circle
+    ["⚪", "nothing pending", ({ isDraft }) => !isDraft],
 ]
 
-const rollup = (ci, decision, open = 0, conflicting = false) =>
-    ROLLUP.find(([, , when]) => when(ci, decision, open, conflicting))
+/** The circle and what it is called, or nothing when a draft wants nothing. */
+const rollup = ({ ci, decision, open = 0, conflicting = false, isDraft = false }) =>
+    ROLLUP.find(([, , when]) => when({ ci, decision, open, conflicting, isDraft })) ?? []
 
 /** CI summary with the noisy checks dropped, so one flaky job doesn't colour
  *  the whole branch. Recomputes the conclusion rather than trusting `but`'s,
@@ -576,6 +579,17 @@ function setPlanPinned(store, name, pinned) {
     store.set(PINNED_PLANS, [...names])
 }
 
+const IGNORED_STATUS = "ignoredStatus"
+
+/** Branches whose PR row shows no circle, by hand and until told otherwise. */
+const isStatusIgnored = (store, branch) =>
+    (store.get(IGNORED_STATUS) ?? []).includes(branch)
+
+function setStatusIgnored(store, branch, ignored) {
+    const rest = (store.get(IGNORED_STATUS) ?? []).filter((b) => b !== branch)
+    store.set(IGNORED_STATUS, ignored ? [...rest, branch] : rest)
+}
+
 const PARKED_PLANS = "parkedPlans"
 
 /** Live plans unpinned by hand, each for as long as the branch that made it
@@ -667,4 +681,4 @@ function planProgress(plan) {
     return `${items.filter((i) => i.done).length}/${items.length}`
 }
 
-module.exports = { isHeaderLine, liveBranch, livePlans, pinnedPlans, setPlanPinned, parkedPlans, setPlanParked, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
+module.exports = { isHeaderLine, liveBranch, livePlans, pinnedPlans, setPlanPinned, parkedPlans, setPlanParked, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, isStatusIgnored, setStatusIgnored, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }

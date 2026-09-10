@@ -32,6 +32,15 @@
                 }
             },
             {
+                "id": "butReview.ignoredStatus",
+                "description": "Row colour for a PR whose status you have ignored",
+                "defaults": {
+                    "dark": "disabledForeground",
+                    "light": "disabledForeground",
+                    "highContrast": "disabledForeground"
+                }
+            },
+            {
                 "id": "butReview.stackIcon",
                 "description": "Icon colour for stack rows",
                 "defaults": {
@@ -203,6 +212,18 @@
                 "icon": "$(link)"
             },
             {
+                "command": "butReview.ignoreStatus",
+                "title": "Ignore Status",
+                "category": "GitButler Review",
+                "icon": "$(bell-slash)"
+            },
+            {
+                "command": "butReview.showStatus",
+                "title": "Show Status",
+                "category": "GitButler Review",
+                "icon": "$(bell)"
+            },
+            {
                 "command": "butReview.diffAgainstCommit",
                 "title": "Review Committed Changes Only",
                 "category": "GitButler Review",
@@ -360,6 +381,14 @@
                     "when": "false"
                 },
                 {
+                    "command": "butReview.ignoreStatus",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.showStatus",
+                    "when": "false"
+                },
+                {
                     "command": "butReview.viewAsList",
                     "when": "false"
                 },
@@ -486,13 +515,23 @@
                 },
                 {
                     "command": "butReview.copyUrl",
-                    "when": "view == butReview.prs && viewItem == pr",
+                    "when": "view == butReview.prs && viewItem =~ /^pr(Ignored)?$/",
                     "group": "inline@1"
                 },
                 {
                     "command": "butReview.openUrl",
-                    "when": "view == butReview.prs && viewItem == pr",
+                    "when": "view == butReview.prs && viewItem =~ /^pr(Ignored)?$/",
                     "group": "inline@2"
+                },
+                {
+                    "command": "butReview.ignoreStatus",
+                    "when": "view == butReview.prs && viewItem == pr",
+                    "group": "1_modify"
+                },
+                {
+                    "command": "butReview.showStatus",
+                    "when": "view == butReview.prs && viewItem == prIgnored",
+                    "group": "1_modify"
                 },
                 {
                     "command": "butReview.viewAsTree",

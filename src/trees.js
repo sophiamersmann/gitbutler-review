@@ -6,7 +6,7 @@ const { listPlans } = require("./plans")
 const { repoRoot } = require("./exec")
 const { branchFiles, changedFiles, contaminated, diffNames, overlapMap } = require("./git")
 const { branchGroupItem, branchItem, commitItem, commitsGroupItem, dirtyFileItem, filesGroupItem, fileItem, folderItem, hunkItem, planItem, planLinkItem, planStageItem, planTaskItem, plansGroupItem, prItem, prStackItem, stackItem, unplacedGroupItem, wholeStackItem } = require("./items")
-const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, layoutFor, livePlans, parkedPlans, pinnedPlans, planIndex, planRows, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
+const { byBranch, commitLens, commitsKey, committedMode, filesKey, fileTree, isStatusIgnored, layoutFor, livePlans, parkedPlans, pinnedPlans, planIndex, planRows, positions, rowsOf, splitOverlap, wholeStack } = require("./model")
 
 /** The boilerplate every provider needs: rows are TreeItems already, so
  *  getTreeItem is the identity, and refreshing is one event. */
@@ -301,8 +301,16 @@ class UncommittedTree extends Tree {
 class PrTree extends Tree {
     constructor(store) {
         super()
-        // only for the stack names, which the two views have to agree on
+        // one workspaceState-backed store, two key namespaces: the stack names,
+        // which the two views have to agree on, and the ignored statuses
         this.overrides = store
+        this.ignored = store
+    }
+
+    prRow(row) {
+        return prItem(row, {
+            ignored: isStatusIgnored(this.ignored, row.branch.name),
+        })
     }
 
     refresh() {
@@ -314,7 +322,7 @@ class PrTree extends Tree {
     async getChildren(node) {
         const root = repoRoot()
         if (!root) return []
-        if (node) return node.prs?.map(prItem) ?? []
+        if (node) return node.prs?.map((row) => this.prRow(row)) ?? []
         try {
             const prs = await openPrs(root)
             // threads and conflict state cost another round trip and only ever
@@ -334,7 +342,7 @@ class PrTree extends Tree {
                     .map((b) => ({ branch: b, pr: b.pr }))
                     .filter((r) => r.pr)
                 if (!prs.length) continue
-                rows.push(prs.length === 1 ? prItem(prs[0]) : prStackItem(stack, prs))
+                rows.push(prs.length === 1 ? this.prRow(prs[0]) : prStackItem(stack, prs))
             }
             return rows
         } catch (e) {

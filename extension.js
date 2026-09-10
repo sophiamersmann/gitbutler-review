@@ -5,8 +5,8 @@ const path = require("path")
 const { stacksOf, status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
-const { BASE, DECORATION, FILE, PR } = require("./src/items")
-const { committedMode, layoutKey, nextHunk, setPlanParked, setPlanPinned, sharedWords, stackKey, stackKeys, stackName } = require("./src/model")
+const { BASE, DECORATION, FILE, IGNORED, PR } = require("./src/items")
+const { committedMode, layoutKey, nextHunk, setPlanParked, setPlanPinned, setStatusIgnored, sharedWords, stackKey, stackKeys, stackName } = require("./src/model")
 const { createPlan, listPlans, plansRoot, writePlanLink } = require("./src/plans")
 const { BranchTree, PlanTree, PrTree, UncommittedTree, planListing } = require("./src/trees")
 
@@ -447,8 +447,18 @@ function activate(context) {
         // Scoped to our own scheme, so the Explorer's decorations are untouched.
         vscode.window.registerFileDecorationProvider({
             provideFileDecoration: (u) => {
-                // the PR row carries its own circle; its tooltip names it
-                if (u.scheme === PR) return { badge: u.query }
+                // the PR row carries its own circle; its tooltip names it. A
+                // row you have ignored has no circle to carry, so the colour is
+                // the whole decoration — it dims the label rather than marking
+                // the badge column
+                if (u.scheme === PR)
+                    return u.query === IGNORED
+                        ? {
+                              color: new vscode.ThemeColor(
+                                  "butReview.ignoredStatus"
+                              ),
+                          }
+                        : { badge: u.query }
                 if (u.scheme !== FILE) return
                 const [badge, color] = DECORATION[u.query[0]] ?? []
                 if (!badge) return
@@ -616,6 +626,19 @@ function activate(context) {
                 setPlanParked(store, node.plan.name, node.live.branch, true)
             setPlanPinned(store, node.plan.name, false)
             refreshPlans()
+        }),
+
+        // A row you have decided not to act on: the circle goes, the tooltip
+        // stays. Keyed on the branch, so a closed and reopened PR is still the
+        // same row, and repainted with `changed.fire()` rather than `refresh()`
+        // — nothing here needs the PR list refetched.
+        vscode.commands.registerCommand("butReview.ignoreStatus", (node) => {
+            setStatusIgnored(store, node.branch.name, true)
+            prs.changed.fire()
+        }),
+        vscode.commands.registerCommand("butReview.showStatus", (node) => {
+            setStatusIgnored(store, node.branch.name, false)
+            prs.changed.fire()
         }),
 
         // A stack has no name of its own, so the one shown is read off the
