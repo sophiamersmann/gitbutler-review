@@ -252,6 +252,10 @@ Its own icon in the activity bar. Your open PRs grouped by stack, bottom-first, 
 branch nearest the target lands next. GitHub's own extension can't group them this way, as
 it doesn't know about stacks.
 
+A row is its branch name and its churn — `+100 −80`, as the file rows write it. GitHub
+counts that against the PR's base, so in a stack it is the branch's own diff rather than
+everything below it. The PR's title is the first line of its tooltip.
+
 Each row gets one circle, ordered by how much it needs from you:
 
 | | |

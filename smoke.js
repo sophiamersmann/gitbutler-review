@@ -671,13 +671,36 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
 
 const prs = await api.listPrs(root)
 let prRows = 0
+const subtitles = []
 for (const s of api.stacksOf(st, undefined, prs)) {
     const rows = s.branches.map((b) => ({ branch: b, pr: b.pr })).filter((r) => r.pr)
     if (!rows.length) continue
     if (rows.length > 1) api.prStackItem(s, rows)
     for (const r of rows) {
-        api.prItem(r)
+        subtitles.push(api.prItem(r).description)
         prRows++
+    }
+}
+{
+    const bare = { name: "b", failing: [], pending: [], passing: [] }
+    const cases = [
+        [
+            subtitles.every((d) => /^\+\d+ −\d+$/.test(d)),
+            true,
+            "every row's subtitle is its churn",
+        ],
+        [
+            api.prItem({ pr: { number: 1, url: "" }, branch: bare }).description,
+            "",
+            "a PR gh gave no counts for says nothing rather than +undefined",
+        ],
+    ]
+    const bad = cases.filter(([got, want]) => got !== want)
+    for (const [got, want, what] of bad)
+        console.log(`PROBLEM  pr churn: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (bad.length) {
+        process.exitCode = 1
+        console.log(`         subtitles: ${JSON.stringify(subtitles.slice(0, 3))}`)
     }
 }
 console.log(`ok: ${prRows} pr rows`)

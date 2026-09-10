@@ -308,7 +308,7 @@ const listPrs = async (root) =>
             [
                 "pr", "list", "--author", "@me", "--limit", "100",
                 "--json",
-                "id,number,title,url,isDraft,author,reviews,reviewRequests,headRefName",
+                "id,number,title,url,isDraft,author,reviews,reviewRequests,headRefName,additions,deletions",
             ],
             root
         )

@@ -536,11 +536,12 @@ function prItem(row) {
     const open = openThreads(pr)
     const [circle, summary] = rollup(ci.state, decision, open, pr.conflicting)
 
-    // branch names are short and scannable; the PR title is the elaboration
     const item = new vscode.TreeItem(branch.name)
     // the circle itself is the badge; the tooltip below is what names it
     item.resourceUri = uri(PR, String(pr.number), circle)
-    item.description = pr.title
+    // GitHub counts against the PR's base, which for a stacked PR is the branch
+    // below it: this is the branch's own diff, not the stack's
+    item.description = churn([{ adds: pr.additions, dels: pr.deletions }])
     // shape and colour both say draft-or-open, GitHub's own convention, so the
     // two are told apart at a glance rather than by squinting at the glyph
     item.iconPath = new vscode.ThemeIcon(
@@ -594,13 +595,13 @@ const rangeOf = (row, i) => {
  *  hunk header's when we have no body to read. */
 const jumpLine = (row, i) => row.hunkMeta?.[i]?.from ?? hunkLine(row.hunks[i])
 
-/** "+5 −1" over a row's hunks, written the way the branch view writes a file's.
- *  Blank when `but diff` gave us nothing to count. */
-function churn(hunks) {
-    const known = (hunks ?? []).filter((h) => h?.adds !== undefined)
+/** "+5 −1" summed over anything that counts lines — a row's hunks, a PR's diff.
+ *  Blank when nothing came back with counts on it. */
+function churn(parts) {
+    const known = (parts ?? []).filter((p) => p?.adds !== undefined)
     if (!known.length) return ""
-    const adds = known.reduce((n, h) => n + h.adds, 0)
-    const dels = known.reduce((n, h) => n + h.dels, 0)
+    const adds = known.reduce((n, p) => n + p.adds, 0)
+    const dels = known.reduce((n, p) => n + p.dels, 0)
     return `+${adds} −${dels}`
 }
 
