@@ -682,7 +682,7 @@ for (const s of api.stacksOf(st, undefined, prs)) {
     }
 }
 {
-    const bare = { name: "b", failing: [], pending: [], passing: [] }
+    const branch = { name: "b" }
     const cases = [
         [
             subtitles.every((d) => /^\+\d+ −\d+$/.test(d)),
@@ -690,7 +690,7 @@ for (const s of api.stacksOf(st, undefined, prs)) {
             "every row's subtitle is its churn",
         ],
         [
-            api.prItem({ pr: { number: 1, url: "" }, branch: bare }).description,
+            api.prItem({ pr: { number: 1, url: "" }, branch }).description,
             "",
             "a PR gh gave no counts for says nothing rather than +undefined",
         ],
@@ -701,10 +701,14 @@ for (const s of api.stacksOf(st, undefined, prs)) {
 
     // ignoring a status drops the circle and nothing else: the row still says
     // which checks are failing, or muting it would be a lie
-    const red = { name: "b", failing: ["build"], pending: [], passing: [] }
-    const pr = { number: 1, url: "", title: "t" }
-    const loud = api.prItem({ pr, branch: red })
-    const quiet = api.prItem({ pr, branch: red }, { ignored: true })
+    const pr = {
+        number: 1,
+        url: "",
+        title: "t",
+        checks: [{ title: "build", state: "failing" }],
+    }
+    const loud = api.prItem({ pr, branch })
+    const quiet = api.prItem({ pr, branch }, { ignored: true })
     const muted = [
         [loud.resourceUri.query, "🔴", "a loud row badges its circle"],
         [loud.contextValue, "pr", "and offers Ignore Status"],
@@ -735,6 +739,18 @@ console.log(`ok: ${prRows} pr rows`)
         })
     const circle = (...threads) =>
         api.rollup({ decision: "approved", open: open(...threads) })[0]
+    // both halves of a real rollup: the cancelled run and the successor that
+    // cancelled it sit side by side, and GitHub calls the pair a FAILURE
+    const cancelledThenRerun = [
+        { __typename: "CheckRun", name: "build-and-deploy", status: "COMPLETED", conclusion: "CANCELLED" },
+        { __typename: "CheckRun", name: "build-and-deploy", status: "COMPLETED", conclusion: "SUCCESS" },
+    ]
+    const ciCircle = (...states) =>
+        api.rollup({
+            ci: api.ciState({
+                checks: states.map((state, i) => ({ title: `c${i}`, state })),
+            }).state,
+        })[0]
     const cases = [
         [circle(), "🟢", "approved, no threads"],
         [circle(thread(true, "reviewer")), "🟢", "all resolved"],
@@ -754,6 +770,19 @@ console.log(`ok: ${prRows} pr rows`)
         [api.rollup({ ci: "passing", decision: "approved", conflicting: true })[0], "🔴", "conflicting beats approved"],
         [api.rollup({ ci: "passing", decision: "approved", conflicting: false })[0], "🟢", "not conflicting is left alone"],
         [api.rollup({ ci: "passing", decision: "approved" })[0], "🟢", "no conflict data yet reads as none"],
+        // the whole chain from a check to a circle, since a state ciState never
+        // returns is a rung nothing can reach
+        [ciCircle("pending", "passing"), "🟡", "one check still running"],
+        [ciCircle("passing", "passing"), "⚪", "all of them green"],
+        [ciCircle("failing", "pending"), "🔴", "a failure outranks the wait"],
+        [api.ciState({}).state, undefined, "a PR whose checks have not landed claims no state"],
+        [ciCircle(), "⚪", "so its row falls past every CI rung"],
+        [api.ciState({ checks: [{ title: "a", state: "pending" }] }).label, "… 1 running", "a running label counts the checks"],
+        [
+            cancelledThenRerun.map(api.toCheck).every((c) => c.state === "passing"),
+            true,
+            "a run superseded by its own concurrency group is not a failure",
+        ],
     ]
     const bad = cases.filter(([got, want]) => got !== want)
     for (const [got, want, what] of bad)
@@ -761,12 +790,36 @@ console.log(`ok: ${prRows} pr rows`)
     // the rows above were built before this resolved, exactly as the panel
     // does it — so this also proves prItem survives a PR with no detail data
     await api.prDetails(root, prs)
-    if (prs.some((p) => p.reviewThreads === undefined || p.conflicting === undefined))
+    if (
+        prs.some(
+            (p) =>
+                p.reviewThreads === undefined ||
+                p.conflicting === undefined ||
+                p.checks === undefined
+        )
+    )
         console.log("PROBLEM  prDetails: some PRs came back unfilled")
+    // the states are what the circle is drawn from, so an unmapped one would
+    // quietly become a failure
+    const odd = prs.flatMap((p) =>
+        (p.checks ?? [])
+            .filter(
+                (c) => !["passing", "pending", "failing"].includes(c.state) || !c.title
+            )
+            .map((c) => JSON.stringify(c))
+    )
+    if (odd.length) {
+        process.exitCode = 1
+        console.log(`PROBLEM  prDetails: unmapped checks ${odd.slice(0, 3).join(" ")}`)
+    }
     if (bad.length) process.exitCode = 1
     const withThreads = prs.filter((p) => p.reviewThreads?.length).length
     const conflicting = prs.filter((p) => p.conflicting).length
-    console.log(`ok: ${cases.length} rollup cases, ${withThreads} live PRs with threads, ${conflicting} conflicting`)
+    const running = prs.filter((p) =>
+        p.checks?.some((c) => c.state === "pending")
+    ).length
+    const checks = prs.reduce((n, p) => n + (p.checks?.length ?? 0), 0)
+    console.log(`ok: ${cases.length} rollup cases, ${withThreads} live PRs with threads, ${conflicting} conflicting, ${checks} checks over ${running} PRs still running`)
 }
 
 // the biggest branch, so the row builders get a real workout

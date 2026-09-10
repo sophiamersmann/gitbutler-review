@@ -33,8 +33,8 @@ neither is part of that loop.
 
 ### Branches
 
-Applied stacks, sorted by recent activity, with each branch row showing its CI summary
-and age. A stack is named from the `(topic)` convention in its PR titles, falling back
+Applied stacks, sorted by recent activity, with each branch row showing its age. A
+check's state belongs to the PR, so it appears only in the Pull Requests view. A stack is named from the `(topic)` convention in its PR titles, falling back
 to the common prefix of its branch names. Click a file to open the diff, or tick it off
 once reviewed.
 
@@ -285,14 +285,19 @@ Status** puts the circle back.
 
 An approval still counts as one after the reviewer leaves a later comment, which is not
 how `gh` reports it by default. Bot reviews don't count, and the unresolved-thread count
-ignores bots and your own comments. Conflicts and thread resolution both come from one
-GraphQL call, the only place either is exposed; GitHub computes the merge state
-asynchronously and says it doesn't know until it has, which reads here as no conflict
-rather than reddening a PR you just opened.
+ignores bots and your own comments. Conflicts, thread resolution and CI all come from one
+GraphQL call; GitHub computes the merge state asynchronously and says it doesn't know
+until it has, which reads here as no conflict rather than reddening a PR you just opened.
 
-PR data is fetched when the view first opens and when you press its refresh button,
-nothing else — it's the only part that touches the network. CI status is read locally, so
-it also updates when the window regains focus.
+CI comes from GitHub rather than from `but status`, which reports only workflow jobs and
+so cannot see a Buildkite build or any other plain commit status — the long-running half
+of many pipelines. A check GitHub has no conclusion for yet counts as running, and one
+whose conclusion is unfamiliar counts as a pass, so a new state cannot redden every PR at
+once.
+
+The PR list is fetched when the view first opens and when you press its refresh button.
+The details behind the circles are re-read on top of that whenever the window regains
+focus or the repo changes, since CI moves on its own while a run is in flight.
 
 ## Install
 

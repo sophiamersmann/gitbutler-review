@@ -315,8 +315,16 @@ class PrTree extends Tree {
 
     refresh() {
         openPrs.invalidate()
-        this.threads = undefined
+        this.details = undefined
         super.refresh()
+    }
+
+    /** Re-read the details and keep the PR list: CI moves on its own while a
+     *  run is in flight, where the list only changes when you push or someone
+     *  reviews. */
+    refreshDetails() {
+        this.details = undefined
+        this.changed.fire()
     }
 
     async getChildren(node) {
@@ -325,11 +333,11 @@ class PrTree extends Tree {
         if (node) return node.prs?.map((row) => this.prRow(row)) ?? []
         try {
             const prs = await openPrs(root)
-            // threads and conflict state cost another round trip and only ever
-            // change a circle, so don't hold the rows for them — fill the same
-            // PR objects in the background and repaint. `changed.fire()`, not
-            // `refresh()`, or the repaint would clear the cache and loop.
-            this.threads ??= prDetails(root, prs)
+            // threads, conflict state and CI cost another round trip and only
+            // ever change a circle, so don't hold the rows for them — fill the
+            // same PR objects in the background and repaint. `changed.fire()`,
+            // not `refresh()`, or the repaint would clear the cache and loop.
+            this.details ??= prDetails(root, prs)
                 .catch(() => {})
                 .then(() => this.changed.fire())
 

@@ -536,7 +536,7 @@ function prItem(row, { ignored = false } = {}) {
     const { pr, branch } = row
     // not gated on isDraft: a draft with a review request is worth seeing
     const decision = humanDecision(pr)
-    const ci = ciState(branch)
+    const ci = ciState(pr)
     const open = openThreads(pr)
     const [circle, summary] = ignored
         ? []

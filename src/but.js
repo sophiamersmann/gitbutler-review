@@ -56,9 +56,6 @@ function stacksOf(st, overrides, prs) {
                     name: b.name,
                     base,
                     pr: prOf.get(b.name),
-                    passing: b.ci?.passingCheckTitles ?? [],
-                    pending: b.ci?.pendingCheckTitles ?? [],
-                    failing: b.ci?.failingCheckTitles ?? [],
                     commits: b.commits.map((c, j) => ({
                         // what a row is keyed on: a reword or a rebase writes a
                         // new SHA over the same change, and `changeId` is what
@@ -270,13 +267,45 @@ async function uncommittedPlan(root, st) {
 }
 
 const DETAILS_QUERY =
-    "query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id mergeable reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{author{login}}}}}}}}"
+    "query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id mergeable reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{author{login}}}}} statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}}}}"
 
-/** Thread resolution and conflict state, the two review facts `gh pr list
- *  --json` cannot reach — both live only in GraphQL. Asked for by node id, so
- *  no owner/repo lookup is needed. Failure is not fatal: a PR without either
- *  reads as "nothing unresolved, no conflicts", which is what the old behaviour
- *  assumed anyway. Fills the PR objects in place, so a caller that already
+// Named as failures rather than as passes, so an enum value GitHub adds reads
+// as a pass: a check we have not heard of must not redden every PR at once.
+// CANCELLED is not among them, though GitHub's own rollup counts it — a
+// workflow with a concurrency group leaves a cancelled run behind every time it
+// supersedes one, and the successor sits in the rollup beside it.
+const CHECK_RUN_FAILS = [
+    "FAILURE",
+    "TIMED_OUT",
+    "ACTION_REQUIRED",
+    "STARTUP_FAILURE",
+]
+const STATUS_CONTEXT_FAILS = ["FAILURE", "ERROR"]
+
+const checkRunState = ({ status, conclusion }) => {
+    if (status !== "COMPLETED") return "pending"
+    return CHECK_RUN_FAILS.includes(conclusion) ? "failing" : "passing"
+}
+
+const statusContextState = ({ state }) => {
+    if (state === "PENDING" || state === "EXPECTED") return "pending"
+    return STATUS_CONTEXT_FAILS.includes(state) ? "failing" : "passing"
+}
+
+/** One check's title and state. The rollup has two kinds of entry: a workflow
+ *  job arrives as a CheckRun, and anything posting a plain commit status —
+ *  Buildkite, BundleMon — as a StatusContext, which has no `status` of its own
+ *  and folds "in flight" into its state. */
+const toCheck = (node) =>
+    node.__typename === "CheckRun"
+        ? { title: node.name, state: checkRunState(node) }
+        : { title: node.context, state: statusContextState(node) }
+
+/** Thread resolution, conflict state and CI, the three facts `gh pr list
+ *  --json` cannot reach cheaply. Asked for by node id, so no owner/repo lookup
+ *  is needed. Failure is not fatal: a PR without them reads as "nothing
+ *  unresolved, no conflicts, no CI", which is how a row draws before this
+ *  lands anyway. Fills the PR objects in place, so a caller that already
  *  rendered them can repaint rather than refetch — see PrTree. */
 async function prDetails(root, prs) {
     if (!prs.length) return
@@ -295,6 +324,9 @@ async function prDetails(root, prs) {
                 isResolved: t.isResolved,
                 login: t.comments.nodes[0]?.author?.login ?? "",
             }))
+            // null until the first check of a fresh push exists
+            const rollup = node.statusCheckRollup?.contexts.nodes ?? []
+            p.checks = rollup.map(toCheck)
         }
 }
 
@@ -343,4 +375,4 @@ openPrs.invalidate = () => (prCache = {})
 /** The list if it has arrived, for a caller that must not wait on the network */
 openPrs.arrived = () => prCache.prs
 
-module.exports = { status, stacksOf, uncommittedPlan, rangeKey, listPrs, openPrs, prDetails }
+module.exports = { status, stacksOf, uncommittedPlan, rangeKey, listPrs, openPrs, prDetails, toCheck }

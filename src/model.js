@@ -26,25 +26,26 @@ const rollup = ({ ci, decision, open = 0, conflicting = false, isDraft = false }
     ROLLUP.find(([, , when]) => when({ ci, decision, open, conflicting, isDraft })) ?? []
 
 /** CI summary with the noisy checks dropped, so one flaky job doesn't colour
- *  the whole branch. Recomputes the conclusion rather than trusting `but`'s,
- *  which counts every check. */
-function ciState(branch) {
+ *  the whole branch. Recomputes the conclusion rather than reading GitHub's own
+ *  rollup state, which counts every check. A PR whose checks have not arrived
+ *  yet gets no state at all, the same as one with no CI. */
+function ciState(pr) {
     const ignored = cfg().get("ignoredChecks", [])
-    const keep = (titles) =>
-        titles.filter(
-            (t) =>
-                !ignored.some((p) =>
-                    t.toLowerCase().includes(String(p).toLowerCase())
-                )
-        )
-    const failing = keep(branch.failing)
-    const pending = keep(branch.pending)
-    const passing = keep(branch.passing)
+    const checks = (pr.checks ?? []).filter(
+        (c) =>
+            !ignored.some((p) =>
+                c.title.toLowerCase().includes(String(p).toLowerCase())
+            )
+    )
+    const titled = (state) =>
+        checks.filter((c) => c.state === state).map((c) => c.title)
+    const failing = titled("failing")
+    const pending = titled("pending")
     if (failing.length)
         return { state: "failing", label: `✗ ${failing.length} failing`, failing }
     if (pending.length)
         return { state: "running", label: `… ${pending.length} running`, failing }
-    if (passing.length) return { state: "passing", label: "✓ CI", failing }
+    if (checks.length) return { state: "passing", label: "✓ CI", failing }
     return { failing }
 }
 

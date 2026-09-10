@@ -346,11 +346,9 @@ function activate(context) {
         // applying or unapplying a branch is what moves a plan between the two
         // Plans views
         refreshPlans()
-        // A PR row's CI circle comes from `but status`, which the two views
-        // above just read — so repaint it for free. `changed.fire()`, not
-        // `refresh()`: the reviews and threads behind it are network, and
-        // refresh() would throw that cache away.
-        prs.changed.fire()
+        // CI runs without anyone touching the repo, so the details behind a PR
+        // row's circle go stale on their own. The PR list cannot, and is kept.
+        prs.refreshDetails()
         syncVisibility()
         if (marked.size) repaintOpen()
     }
