@@ -532,14 +532,21 @@ function prStackItem(stack, prs) {
     return item
 }
 
-function prItem(row, { ignored = false } = {}) {
+function prItem(row, { ignored = false, circles } = {}) {
     const { pr, branch } = row
     // not gated on isDraft: a draft with a review request is worth seeing
     const decision = humanDecision(pr)
     const ci = ciState(pr)
     const open = openThreads(pr)
-    const [circle, summary] = ignored
-        ? []
+    // Half the ladder comes from the PR list and half from the details call, so
+    // a row drawn between the two reads as approved while comments are still
+    // waiting on it, and as unconflicted while it conflicts. The circle it
+    // carried last time is the better guess until they land.
+    const partial = pr.reviewThreads === undefined
+    const last = circles?.get(pr.number)
+    const [circle, summary] =
+        ignored ? []
+        : partial && last ? last
         : rollup({
               ci: ci.state,
               decision,
@@ -547,6 +554,9 @@ function prItem(row, { ignored = false } = {}) {
               conflicting: pr.conflicting,
               isDraft: pr.isDraft,
           })
+    // only once the details are in, or a half-informed circle would be the one
+    // every later refresh falls back to
+    if (circle && !partial) circles?.set(pr.number, [circle, summary])
 
     const item = new vscode.TreeItem(branch.name)
     // the circle itself is the badge; the tooltip below is what names it. An

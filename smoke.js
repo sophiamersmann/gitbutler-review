@@ -721,6 +721,30 @@ for (const s of api.stacksOf(st, undefined, prs)) {
     for (const [got, want, what] of muted.filter(([g, w]) => g !== w))
         console.log(`PROBLEM  ignore status: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
     if (muted.some(([g, w]) => g !== w)) process.exitCode = 1
+
+    // pressing refresh hands back fresh PR objects with no threads and no
+    // checks on them, and half the ladder reads off those — so the circle has
+    // to survive the gap rather than be recomputed from what has arrived
+    const circles = new Map()
+    const settled = {
+        number: 9,
+        url: "",
+        title: "t",
+        reviews: [{ author: { login: "r" }, state: "APPROVED" }],
+        reviewThreads: [{ isResolved: false, login: "r" }],
+        checks: [],
+    }
+    const refetched = { ...settled, reviewThreads: undefined, checks: undefined }
+    const badge = (pr, opts) => api.prItem({ pr, branch }, opts).resourceUri.query
+    const carried = [
+        [badge(settled, { circles }), "🟠", "an approval with a thread open is orange"],
+        [badge(refetched, { circles }), "🟠", "and stays orange until the details land again"],
+        [badge(refetched, {}), "🟢", "where a row with nothing remembered reads as plain approved"],
+        [circles.get(9)?.[1], "approved, comments unresolved", "the summary rides along for the tooltip"],
+    ]
+    for (const [got, want, what] of carried.filter(([g, w]) => g !== w))
+        console.log(`PROBLEM  remembered circle: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
+    if (carried.some(([g, w]) => g !== w)) process.exitCode = 1
     if (bad.length) {
         process.exitCode = 1
         console.log(`         subtitles: ${JSON.stringify(subtitles.slice(0, 3))}`)

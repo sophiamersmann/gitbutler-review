@@ -305,11 +305,17 @@ class PrTree extends Tree {
         // which the two views have to agree on, and the ignored statuses
         this.overrides = store
         this.ignored = store
+        // PR number -> the last circle drawn for it, to carry a row across the
+        // gap between the list and the details. Deliberately outlives
+        // refresh(), and deliberately not persisted: a circle from a previous
+        // session is a worse guess than none.
+        this.circles = new Map()
     }
 
     prRow(row) {
         return prItem(row, {
             ignored: isStatusIgnored(this.ignored, row.branch.name),
+            circles: this.circles,
         })
     }
 
