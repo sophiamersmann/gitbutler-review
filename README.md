@@ -256,14 +256,14 @@ A row is its branch name and its churn — `+100 −80`, as the file rows write 
 counts that against the PR's base, so in a stack it is the branch's own diff rather than
 everything below it. The PR's title is the first line of its tooltip.
 
-A row that wants something gets one circle, ordered by who owes the work:
+A row that wants something gets one circle, ordered by how much it needs from you:
 
 | | |
 | --- | --- |
 | 🔴 | CI failing, changes requested, or conflicts with the base |
 | 🟠 | approved, but threads still unresolved |
-| 🔵 | review requested |
 | 🟡 | CI running |
+| 🔵 | review requested |
 | 🟢 | approved |
 | ⚪ | nothing pending |
 
@@ -271,10 +271,6 @@ A draft is the one thing that can have no circle at all: ⚪ on a ready PR means
 open and nobody is looking at it, which is worth a nudge, while a draft sitting idle is
 doing what a draft is for. Every colour above ⚪ still shows on a draft — a broken check
 is a broken check whether or not you are ready for review.
-
-CI running sits below review requested because it is the shorter wait: a PR out for
-review would otherwise drop to 🟡 for the few minutes after every push, and a failing
-check reddens the row on its own anyway.
 
 **Ignore Status** on a row's right-click menu drops its circle for good — for the draft
 you have already decided not to ship, where a red dot is an alarm you have no intention

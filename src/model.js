@@ -5,7 +5,7 @@ const { cfg } = require("./exec")
 
 // One circle summarising the PR, not two independent signals: 🟢 is a surrogate
 // pair, so it already fills the 2-character badge budget on its own. Ordered by
-// who owes the work — you, then a reviewer, then CI — and the first match wins.
+// what it asks of you, most demanding first, and the first match wins.
 const ROLLUP = [
     // conflicts belong here rather than on a colour of their own: the rung is
     // "work that is yours", and a conflict with the base is exactly that
@@ -13,8 +13,8 @@ const ROLLUP = [
     // an approval with threads still open is a to-do of yours, so it outranks
     // CI: the tick on GitHub says done, the threads say otherwise
     ["🟠", "approved, comments unresolved", ({ decision, open }) => decision === "approved" && open > 0],
-    ["🔵", "review requested", ({ decision }) => decision === "review requested"],
     ["🟡", "CI running", ({ ci }) => ci === "running"],
+    ["🔵", "review requested", ({ decision }) => decision === "review requested"],
     ["🟢", "approved", ({ decision }) => decision === "approved"],
     // deliberately not a total fallback: a draft with nothing pending falls
     // through to no circle

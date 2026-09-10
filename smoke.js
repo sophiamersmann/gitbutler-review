@@ -763,6 +763,9 @@ console.log(`ok: ${prRows} pr rows`)
         [api.rollup({ isDraft: true })[0], undefined, "an idle draft gets no circle"],
         [api.rollup({ ci: "failing", isDraft: true })[0], "🔴", "a draft still reddens"],
         [api.rollup({ decision: "review requested", isDraft: true })[0], "🔵", "a draft can be out for review"],
+        // the two waits, ranked: checks in flight are what a PR already out for
+        // review shows, so this is the rung that has moved twice
+        [api.rollup({ ci: "running", decision: "review requested" })[0], "🟡", "CI running outranks review requested"],
         [String(open(thread(false, "a"), thread(false, "b"))), "2", "counted"],
         // a conflict is work of yours however healthy the rest of the PR looks,
         // and UNKNOWN — which is what GitHub says until it has computed the
