@@ -333,12 +333,6 @@
                 "icon": "$(folder-opened)"
             },
             {
-                "command": "butReview.deletePlan",
-                "title": "Delete Plan",
-                "category": "GitButler Review",
-                "icon": "$(trash)"
-            },
-            {
                 "command": "butReview.newPlan",
                 "title": "New Plan\u2026",
                 "category": "GitButler Review",
@@ -454,10 +448,6 @@
                     "when": "false"
                 },
                 {
-                    "command": "butReview.deletePlan",
-                    "when": "false"
-                },
-                {
                     "command": "butReview.linkPlan",
                     "when": "false"
                 }
@@ -533,7 +523,7 @@
                 {
                     "command": "butReview.archivePlan",
                     "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem =~ /^plan(:pinned)?$/",
-                    "group": "1_modify"
+                    "group": "inline@4"
                 },
                 {
                     "command": "butReview.revealPlan",
@@ -544,11 +534,6 @@
                     "command": "butReview.copyPlanPath",
                     "when": "(view == butReview.plans || view == butReview.pinnedPlans || view == butReview.archivedPlans) && viewItem =~ /^plan(:pinned|:archived|Stage)?$/",
                     "group": "inline@3"
-                },
-                {
-                    "command": "butReview.deletePlan",
-                    "when": "(view == butReview.plans || view == butReview.pinnedPlans || view == butReview.archivedPlans) && viewItem =~ /^plan(:pinned|:archived)?$/",
-                    "group": "inline@4"
                 },
                 {
                     "command": "butReview.absorbOne",

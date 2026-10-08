@@ -535,24 +535,6 @@ function activate(context) {
             }
         ),
 
-        // To the trash rather than unlinked: `plans/` is gitignored, so a plan
-        // deleted here is in no history that could give it back.
-        vscode.commands.registerCommand("butReview.deletePlan", async (node) => {
-            const plan = node.plan
-            try {
-                await vscode.workspace.fs.delete(vscode.Uri.file(plan.path), {
-                    recursive: true,
-                    useTrash: true,
-                })
-                refreshPlans()
-                vscode.window.showInformationMessage(
-                    `Deleted ${plan.name}. It is in the trash.`
-                )
-            } catch (e) {
-                vscode.window.showErrorMessage(`but-review: ${e.message}`)
-            }
-        }),
-
         // A directory plan reveals its directory, not its overview. Explorer hides
         // `plans/` under explorer.excludeGitIgnore, and the reveal is then a no-op.
         vscode.commands.registerCommand("butReview.revealPlan", (node) => {

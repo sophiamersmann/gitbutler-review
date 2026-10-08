@@ -193,7 +193,7 @@ say progress and age, newest archive first. That order comes from the date in th
 not the mtime, since archiving writes the file. The `Branch:` line stays, so a branch row
 still finds its plan.
 
-**Archive Plan…**, in a plan row's context menu, asks for the outcome and a note, then writes
+**Archive Plan…**, on hover in Pinned and Open, asks for the outcome and a note, then writes
 both lines. For `shipped` the note starts with the PR numbers of the plan's branches if the
 PR list has them. That list holds open PRs only, so it is often empty. Files named after the
 plan, like `2026-09-07-featured-viz-contributors-pr-notes.md` next to
@@ -235,9 +235,6 @@ root — the overview for a directory plan, the phase file for a phase — which
 plan is named in when you hand it to an agent. The status bar echoes the path for a
 couple of seconds: a toast would be a modal-shaped interruption for a two-key action, and
 the path is the part worth checking, since a plan and its phases differ only in the tail.
-
-**Delete Plan**, on hover, takes a directory plan as the whole directory. It goes to the trash rather than being unlinked — `plans/` is gitignored,
-so no history could give one back — and the trash is why it doesn't stop to ask.
 
 Nothing here writes to your files unless you ask it to, which is why the ticks are icons
 rather than checkboxes: ticking one would mean writing `- [x]` back into a file an agent may
