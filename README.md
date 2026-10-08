@@ -193,6 +193,10 @@ Clicking a plan opens its file **and** its phases. They are half of what the row
 a click that opened only the document left them behind the twistie. A click only ever opens;
 the twistie is what closes a row.
 
+**Reveal in Explorer View**, on hover on a plan or a phase, selects it in the Explorer — the
+directory for a directory plan, the file otherwise. It does nothing when
+`explorer.excludeGitIgnore` is on, since that hides `plans/` from the Explorer.
+
 **Copy Path**, on hover on a plan or a phase, copies that row's file relative to the repo
 root — the overview for a directory plan, the phase file for a phase — which is the form a
 plan is named in when you hand it to an agent. The status bar echoes the path for a

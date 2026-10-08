@@ -545,6 +545,13 @@ function activate(context) {
             }
         }),
 
+        // A directory plan reveals its directory, not its overview. Explorer hides
+        // `plans/` under explorer.excludeGitIgnore, and the reveal is then a no-op.
+        vscode.commands.registerCommand("butReview.revealPlan", (node) => {
+            const at = node.stage?.file ?? node.plan.path
+            return vscode.commands.executeCommand("revealInExplorer", vscode.Uri.file(at))
+        }),
+
         vscode.commands.registerCommand("butReview.copyPlanPath", async (node) => {
             const { file } = node.stage ?? node.plan
             const root = repoRoot()

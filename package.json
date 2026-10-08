@@ -308,6 +308,12 @@
                 "icon": "$(copy)"
             },
             {
+                "command": "butReview.revealPlan",
+                "title": "Reveal in Explorer View",
+                "category": "GitButler Review",
+                "icon": "$(folder-opened)"
+            },
+            {
                 "command": "butReview.deletePlan",
                 "title": "Delete Plan",
                 "category": "GitButler Review",
@@ -417,6 +423,10 @@
                     "when": "false"
                 },
                 {
+                    "command": "butReview.revealPlan",
+                    "when": "false"
+                },
+                {
                     "command": "butReview.deletePlan",
                     "when": "false"
                 },
@@ -489,14 +499,19 @@
                     "group": "inline@1"
                 },
                 {
-                    "command": "butReview.copyPlanPath",
+                    "command": "butReview.revealPlan",
                     "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem =~ /^plan(:pinned|Stage)?$/",
                     "group": "inline@2"
                 },
                 {
+                    "command": "butReview.copyPlanPath",
+                    "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem =~ /^plan(:pinned|Stage)?$/",
+                    "group": "inline@3"
+                },
+                {
                     "command": "butReview.deletePlan",
                     "when": "(view == butReview.plans || view == butReview.pinnedPlans) && viewItem =~ /^plan(:pinned)?$/",
-                    "group": "inline@3"
+                    "group": "inline@4"
                 },
                 {
                     "command": "butReview.absorbOne",
