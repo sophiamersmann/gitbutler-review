@@ -5,7 +5,7 @@
 const fs = require("fs/promises")
 const path = require("path")
 const { cfg } = require("./exec")
-const { isHeaderLine, planBranches, planName, planPreview, planStages, planTasks, planTitle } = require("./model")
+const { isHeaderLine, planArchive, planBranches, planName, planPreview, planStages, planTasks, planTitle } = require("./model")
 
 // A plan directory's index, in the order a directory is looked at for one
 const OVERVIEW = ["overview.md", "README.md"]
@@ -75,6 +75,7 @@ async function parse(file) {
         branches: planBranches(text),
         tasks: planTasks(text),
         preview: planPreview(text),
+        archived: planArchive(text),
     }
 }
 
@@ -124,6 +125,7 @@ async function directoryPlan(dir, name, seen) {
             branches: overview.branches,
             tasks: overview.tasks,
             preview: overview.preview,
+            archived: overview.archived,
             ...planStages(overview.tasks, children, overview.name),
         }
     } catch {
@@ -133,27 +135,49 @@ async function directoryPlan(dir, name, seen) {
 
 const iso = (ms) => new Date(ms).toISOString()
 
-/** Insert or replace the `Branch:` line under a plan's title. Only the `Branch:`
- *  segment of a one-line `Branch: … · Base: …` header is rewritten, so the rest
- *  of what a review-findings plan puts there survives. */
-async function writePlanLink(file, branches) {
+/** Insert or replace the `Branch:` line under a plan's title. */
+const writePlanLink = (file, branches) =>
+    writePlanHeader(file, "Branch", branches.join(", "))
+
+/** Mark a plan archived with what `planArchive` reads, or unmark it with
+ *  undefined. */
+async function writePlanArchive(file, archived) {
+    await writePlanHeader(file, "Archived", archived?.date)
+    const outcome = [archived?.outcome, archived?.note].filter(Boolean).join(" ")
+    await writePlanHeader(file, "Outcome", outcome || undefined)
+}
+
+/** Insert, replace or, given undefined, remove one key of the header under a
+ *  plan's title. Only that key's segment of a one-line `Branch: … · Base: …`
+ *  header is touched, so the rest of what a review-findings plan puts there
+ *  survives. A new key goes on a line of its own at the end of the header. */
+async function writePlanHeader(file, key, value) {
     const lines = (await fs.readFile(file, "utf8")).split("\n")
-    const line = `Branch: ${branches.join(", ")}`
     const start = headerStart(lines)
-    const block = []
-    for (let at = start; at < lines.length && lines[at].trim(); at++) block.push(at)
-    const header = block.length > 0 && block.every((at) => isHeaderLine(lines[at]))
-    const branchAt = header
-        ? block.find((at) => lines[at].startsWith("Branch:"))
-        : undefined
-    if (branchAt !== undefined) {
-        const segments = lines[branchAt].split("\u00b7")
-        segments[0] = `${line} `
-        lines[branchAt] = segments.join("\u00b7").trimEnd()
-    } else if (header) lines.splice(start, 0, line)
-    else lines.splice(start, 0, line, "")
+    let end = start
+    while (end < lines.length && lines[end].trim()) end++
+    const header =
+        end > start && lines.slice(start, end).every((l) => isHeaderLine(l))
+    const isKey = (segment) => segment.startsWith(`${key}:`)
+    const entry = value === undefined ? [] : [`${key}: ${value}`]
+    const found = header
+        ? lines.slice(start, end).findIndex((l) => segmentsOf(l).some(isKey))
+        : -1
+    if (found !== -1) {
+        const at = start + found
+        const segments = segmentsOf(lines[at]).flatMap((s) =>
+            isKey(s) ? entry : [s]
+        )
+        if (segments.length) lines[at] = segments.join(" \u00b7 ")
+        // the header's last line takes the blank line under it along
+        else lines.splice(at, end - start === 1 ? 2 : 1)
+    } else if (!entry.length) return
+    else if (header) lines.splice(end, 0, ...entry)
+    else lines.splice(start, 0, ...entry, "")
     await fs.writeFile(file, lines.join("\n"))
 }
+
+const segmentsOf = (line) => line.split("\u00b7").map((s) => s.trim())
 
 /** Where a header sits: under the title and the blank line below it, or at the
  *  top of a plan that has no title. */
@@ -184,4 +208,4 @@ async function createPlan(root, title, branch) {
     return file
 }
 
-module.exports = { createPlan, listPlans, plansRoot, writePlanLink }
+module.exports = { createPlan, listPlans, plansRoot, writePlanArchive, writePlanHeader, writePlanLink }

@@ -368,14 +368,16 @@ class PrTree extends Tree {
     }
 }
 
-/** Plan documents, newest first. Two of these back the two Plans views: the
- *  pinned one holds the plans pinned by hand and those whose branch is applied
- *  and not unpinned by hand, the other holds the rest. A live plan says its
+/** Plan documents, newest first. Three of these back the three Plans views,
+ *  one per `section`: "pinned" holds the plans pinned by hand and those whose
+ *  branch is applied and not unpinned by hand, "archived" the plans whose header
+ *  says they are archived, newest archive first, and "other" the rest. An
+ *  archived plan is in Archived whatever else holds it. A live plan says its
  *  branch where the others say their age, whichever view it is in. */
 class PlanTree extends Tree {
-    constructor(pinned, store) {
+    constructor(section, store) {
         super()
-        this.pinned = pinned
+        this.section = section
         this.store = store
         // plan name -> its row, so a click can hand the view the node to expand.
         // Rebuilt with the rows, since a stale one is a row VSCode no longer has
@@ -401,10 +403,18 @@ class PlanTree extends Tree {
             if (node) return []
 
             const { plans, live, pinned, parked } = await planListing(root, this.store)
-            const inPinned = (p) => pinned.has(p) || (live.has(p) && !parked.has(p))
-            return plans
-                .filter((p) => inPinned(p) === this.pinned)
-                .map((p) => this.row(p, live.get(p)))
+            const sectionOf = (p) =>
+                p.archived
+                    ? "archived"
+                    : pinned.has(p) || (live.has(p) && !parked.has(p))
+                      ? "pinned"
+                      : "other"
+            const rows = plans.filter((p) => sectionOf(p) === this.section)
+            // by the date the header gives, since archiving a plan is a write
+            // that puts it at the top of an mtime order
+            if (this.section === "archived")
+                rows.sort((a, b) => b.archived.date.localeCompare(a.archived.date))
+            return rows.map((p) => this.row(p, live.get(p)))
         } catch (e) {
             vscode.window.showErrorMessage(`but-review: ${e.message}`)
             return []
@@ -412,7 +422,7 @@ class PlanTree extends Tree {
     }
 
     row(plan, live) {
-        const item = planItem(plan, { live, pinned: this.pinned })
+        const item = planItem(plan, { live, pinned: this.section === "pinned" })
         this.rowFor.set(plan.name, item)
         return item
     }

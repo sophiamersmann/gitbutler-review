@@ -636,8 +636,10 @@ function churn(parts) {
 
 /** A plan: the title it gives itself, how far through it is, and when it was
  *  last touched. The tooltip carries the opening paragraph, which is most of
- *  what tells two plans on the same topic apart. */
+ *  what tells two plans on the same topic apart. An archived plan says how it
+ *  ended and when instead, dimmed. */
 function planItem(plan, { live, pinned = false } = {}) {
+    const { archived } = plan
     const item = new vscode.TreeItem(
         plan.title,
         planRows(plan).length
@@ -646,28 +648,36 @@ function planItem(plan, { live, pinned = false } = {}) {
     )
     item.id = `plan:${plan.name}`
     // an age is what a plan has instead of a branch, not as well as one
-    item.description = [planProgress(plan), live ? live.branch : ago(plan.mtime)]
+    item.description = (
+        archived
+            ? [archived.outcome, archived.date]
+            : [planProgress(plan), live ? live.branch : ago(plan.mtime)]
+    )
         .filter(Boolean)
         .join("  \u00b7  ")
-    item.iconPath = live
-        ? new vscode.ThemeIcon(
-              "checklist",
-              new vscode.ThemeColor("butReview.livePlanIcon")
-          )
-        : new vscode.ThemeIcon("checklist")
+    item.iconPath = archived
+        ? new vscode.ThemeIcon("archive", new vscode.ThemeColor("disabledForeground"))
+        : live
+          ? new vscode.ThemeIcon(
+                "checklist",
+                new vscode.ThemeColor("butReview.livePlanIcon")
+            )
+          : new vscode.ThemeIcon("checklist")
     item.tooltip = new vscode.MarkdownString(
         [
             `**${plan.title}**`,
             `\`${plan.name}\` \u00b7 ${ago(plan.mtime)}`,
             plan.preview && `\n${plan.preview}`,
+            archived && `\n_Archived ${archived.date}_`,
+            archived && [archived.outcome, archived.note].filter(Boolean).join(" "),
         ]
             .filter(Boolean)
             .join("  \n")
     )
     item.command = openPlan(plan.file, 0, plan.name)
-    // the hover button is unpin in the Pinned view and pin in the other, which
-    // the context value has to say
-    item.contextValue = pinned ? "plan:pinned" : "plan"
+    // the hover button is unpin in the Pinned view, unarchive in Archived and
+    // pin in the other, which the context value has to say
+    item.contextValue = archived ? "plan:archived" : pinned ? "plan:pinned" : "plan"
     item.plan = plan
     // what pin and unpin act on: a live plan is parked, another is pinned
     item.live = live

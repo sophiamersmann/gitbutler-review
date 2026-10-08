@@ -272,6 +272,18 @@ const overrides = new Map()
         ["# A plan with nothing left", "", "- [x] first", "- [x] second"].join("\n")
     )
     write("stray.patch", "diff --git a/x b/x\n")
+    // archived, one of them a directory whose overview carries the header for
+    // the whole plan. Written in the opposite order to their archive dates, so
+    // the Archived view's order cannot be the mtime's
+    write(
+        "2026-02-04-old-dir/overview.md",
+        "# An archived directory\n\nArchived: 2026-03-05\nOutcome: superseded by A plan in a directory\n\n- [x] [The only phase](phase.md)\n"
+    )
+    write("2026-02-04-old-dir/phase.md", "# The only phase\n")
+    write(
+        "2026-02-04-shipped.md",
+        "# A shipped plan\n\nBranch: shipped-branch \u00b7 Archived: 2026-03-01 \u00b7 Outcome: shipped #7119\n\nWhat it was.\n"
+    )
 
     write(
         "2026-02-05-dir/overview.md",
@@ -303,10 +315,12 @@ const overrides = new Map()
     // nothing of the fixture's is applied, so the rest is the whole list
     const state = new Map()
     const planStore = { get: (k) => state.get(k), set: (k, v) => state.set(k, v) }
-    const tree = new PlanTree(false, planStore)
-    const pinnedTree = new PlanTree(true, planStore)
+    const tree = new PlanTree("other", planStore)
+    const pinnedTree = new PlanTree("pinned", planStore)
+    const archivedTree = new PlanTree("archived", planStore)
     const top = await tree.getChildren()
     const pinnedTop = await pinnedTree.getChildren()
+    const archivedTop = await archivedTree.getChildren()
     const by = (title) => plans.find((p) => p.title === title)
     const rowsOf = async (title) =>
         await tree.getChildren(top.find((r) => r.label === title))
@@ -335,6 +349,12 @@ const overrides = new Map()
     const restRows = await tree.getChildren()
     api.setPlanPinned(planStore, dirPlan.name, false)
     const unpinnedRows = await tree.getChildren()
+    // pinned by hand and archived, which Archived wins
+    const shipped = plans.find((p) => p.title === "A shipped plan")
+    api.setPlanPinned(planStore, shipped.name, true)
+    const pinnedArchived = await pinnedTree.getChildren()
+    const archivedPinned = await archivedTree.getChildren()
+    api.setPlanPinned(planStore, shipped.name, false)
     api.setPlanPinned(planStore, "2020-01-01-long-gone.md", true)
     await pinnedTree.getChildren()
 
@@ -345,12 +365,34 @@ const overrides = new Map()
     const parkedElsewhere = api.parkedPlans(planStore, liveMap(at("whole-plan", "second-phase")), at("whole-plan", "second-phase"))
     const parkedAfter = api.parkedPlans(planStore, liveMap(at("with-tasks")), at("with-tasks"))
 
+    const archive = (text) => JSON.stringify(api.planArchive(text))
     const cases = [
-        [plans.length, 18, "18 plans: twelve filler, five files of their own and one directory — and never the .patch"],
+        [plans.length, 20, "20 plans: twelve filler, six files of their own and two directories, and never the .patch"],
+        [archive("# T\n\nBranch: b \u00b7 Archived: 2026-03-01 \u00b7 Outcome: shipped #7119\n"), '{"date":"2026-03-01","outcome":"shipped","note":"#7119"}', "an archive reads off a one-line header, beside the branch"],
+        [archive("# T\n\nArchived: 2026-03-02\nOutcome: abandoned the data never came\n\nProse.\n"), '{"date":"2026-03-02","outcome":"abandoned","note":"the data never came"}', "and off a two-line one, the outcome its first word and the note the rest"],
+        [archive("# T\n\nArchived: `2026-03-03`\n"), '{"date":"2026-03-03"}', "an archive with no outcome is archived all the same"],
+        [archive("# T\n\nJust prose.\n"), undefined, "and a plan with no header is not archived"],
+        [archive("# T\n\nOutcome: shipped #1\n"), undefined, "nor is one with an outcome and no date"],
+        [by("A shipped plan")?.archived?.note, "#7119", "a file plan carries its archive"],
+        [by("An archived directory")?.archived?.outcome, "superseded", "and a directory plan its overview's"],
+        [by("A plan with tasks").archived, undefined, "which a plan still in play does not have"],
         [plans[0].title, "A plan in a directory", "newest first, and a directory is dated by the newest file in it"],
-        [top.length, 18, "every plan is a top-level row, finished or not"],
+        [top.length, 18, "every plan still in play is a top-level row, finished or not"],
+        [archivedTop.map((r) => r.label).join(" | "), "An archived directory | A shipped plan", "the archived ones are in Archived, newest archive first and not newest file"],
+        [archivedTop[1]?.description, "shipped  \u00b7  2026-03-01", "an archived row says how it ended and when, in place of its progress and age"],
+        [archivedTop[1]?.iconPath.id + " " + archivedTop[1]?.iconPath.color?.id, "archive disabledForeground", "with a dimmed archive glyph"],
+        [archivedTop[1]?.tooltip.value.endsWith("What it was.  \n\n_Archived 2026-03-01_  \nshipped #7119"), true, "and its tooltip has the outcome's note under the preview"],
+        [archivedTop.every((r) => r.contextValue === "plan:archived"), true, "every archived row offers unarchive and no pin"],
+        [archivedTop[0]?.collapsibleState, 1, "and an archived plan still opens to its phases"],
+        [(await archivedTree.getChildren(archivedTop[0])).map((r) => r.label).join(" | "), "The only phase", "which are there under it"],
+        [api.planItem({ ...shipped, archived: { date: "2026-03-04" } }).description, "2026-03-04", "an archive with no outcome says its date alone"],
+        [api.planSiblings([...plans, { name: "2026-02-01-with-tasks-pr-notes.md" }, { name: "2026-02-01-with-tasks-old.md", archived: {} }, { name: "2026-02-01-with-tasks-decisions.tsv" }, { name: "2026-02-01-with-tasksx.md" }], tasked).map((p) => p.name).join(" "), "2026-02-01-with-tasks-pr-notes.md", "archiving offers the .md files named after the plan that are still in play"],
+        [api.planSiblings([...plans, { name: "2026-02-05-dir-pr-notes.md" }], dirPlan).map((p) => p.name).join(" "), "2026-02-05-dir-pr-notes.md", "and a directory plan's, named after the directory"],
+        [api.planPrs(dirPlan, [{ number: 1, headRefName: "second-phase" }, { number: 2, headRefName: "whole-plan" }, { number: 3, headRefName: "elsewhere" }]).map((pr) => pr.number).join(" "), "1 2", "a plan's PRs are those of the branches it and its phases name"],
+        [pinnedArchived.length, 0, "pinning an archived plan does not take it out of Archived"],
+        [archivedPinned.length, 2, "which still has it"],
         [pinnedTop.length, 0, "and with no branch applied and nothing pinned, the Pinned view has none of them"],
-        [top.map((r) => r.label).join(" | ") === plans.map((p) => p.title).join(" | "), true, "in the order the list has them, newest first"],
+        [top.map((r) => r.label).join(" | ") === plans.filter((p) => !p.archived).map((p) => p.title).join(" | "), true, "in the order the list has them, newest first"],
         [top.every((r) => r.contextValue === "plan"), true, "and every row is a plan row, hover buttons and all"],
         [dirPlan.stages.map((s) => s.name).join(" "), "phase-1.md phase-2.md phase-3.md", "phases in the order the overview links them, ./ and #anchor and all"],
         [dirPlan.docs.map((d) => d.name).join(" "), "notes.md", "a file the overview never links is a document, and the overview is neither"],
@@ -427,6 +469,41 @@ const overrides = new Map()
     await api.writePlanLink(path.join(dir, "2026-02-02-sections-only.md"), ["fresh"])
     await api.writePlanLink(path.join(dir, "2026-02-01-with-tasks.md"), ["moved"])
     await api.writePlanLink(path.join(dir, "2026-02-03-bare.md"), ["moved"])
+    // archiving, against the header a review-findings plan writes: three keys
+    // in front of the branch on its line, and lines of their own around it
+    const findings = [
+        "# map-dimension \u2014 findings",
+        "",
+        "Source: /code-review high map-dimensions (branch)",
+        "Branch: map-dimension \u00b7 Base: 3f39fa1af9 \u00b7 Commit under review: 82667fdc08 \u00b7 Started: 2026-09-14",
+        "File: plans/2026-09-14-map-dimension-findings.md",
+        "",
+        "Current: \u2014 all findings resolved",
+        "",
+        "- [x] 1. a finding",
+    ].join("\n")
+    const scratch = (name, text) => {
+        const at = path.join(fixture, name)
+        fs.writeFileSync(at, text)
+        return at
+    }
+    const reread = (at) => fs.readFileSync(at, "utf8")
+    const reviewed = scratch("findings.md", findings)
+    await api.writePlanArchive(reviewed, { date: "2026-03-09", outcome: "shipped", note: "#7001" })
+    const archivedFindings = reread(reviewed)
+    await api.writePlanLink(reviewed, ["moved"])
+    const relinked = reread(reviewed)
+    await api.writePlanArchive(reviewed, { date: "2026-03-10", outcome: "abandoned", note: "nobody needs it" })
+    const rearchived = reread(reviewed)
+    await api.writePlanArchive(reviewed, undefined)
+    const unarchived = reread(reviewed)
+    const oneLine = scratch("one-line.md", "# T\n\nBranch: b \u00b7 Archived: 2026-03-01 \u00b7 Outcome: shipped #1\n\nProse.\n")
+    await api.writePlanArchive(oneLine, undefined)
+    const ownLines = scratch("own-lines.md", "# T\n\nArchived: 2026-03-01\nOutcome: reference\n\nProse.\n")
+    await api.writePlanArchive(ownLines, undefined)
+    const headless = scratch("headless.md", "# T\n\nProse.\n")
+    await api.writePlanArchive(headless, { date: "2026-03-02", outcome: "reference" })
+    await api.writePlanHeader(headless, "Nothing", undefined)
     const made = await api.createPlan(fixture, "A plan the picker made", "made-up")
     fs.appendFileSync(made, "edited by hand\n")
     const again = await api.createPlan(fixture, "A plan the picker made", "made-up")
@@ -435,6 +512,15 @@ const overrides = new Map()
         [read("2026-02-01-with-tasks.md").split("\n")[2], "Branch: moved", "a plan that had one has it rewritten in place"],
         [read("2026-02-01-with-tasks.md").split("\n")[4], "The opening paragraph, which is what the tooltip shows.", "and its prose is left alone"],
         [read("2026-02-03-bare.md").split("\n")[2], "Branch: moved \u00b7 Base: master \u00b7 Started: 2026-02-03", "only the Branch segment of a one-line header is rewritten"],
+        [archivedFindings.split("\n").slice(2, 8).join("|"), findings.split("\n").slice(2, 5).join("|") + "|Archived: 2026-03-09|Outcome: shipped #7001|", "archiving adds its two keys at the end of the header, leaving the rest as it was"],
+        [JSON.stringify(api.planArchive(archivedFindings)), '{"date":"2026-03-09","outcome":"shipped","note":"#7001"}', "and reads back as it was written"],
+        [relinked.split("\n")[3], "Branch: moved \u00b7 Base: 3f39fa1af9 \u00b7 Commit under review: 82667fdc08 \u00b7 Started: 2026-09-14", "relinking an archived plan rewrites its Branch segment alone"],
+        [api.planArchive(relinked)?.date, "2026-03-09", "and leaves the archive be"],
+        [rearchived.split("\n").slice(5, 7).join("|"), "Archived: 2026-03-10|Outcome: abandoned nobody needs it", "archiving again replaces both keys in place"],
+        [unarchived, findings.replace("Branch: map-dimension", "Branch: moved"), "unarchiving takes both away and nothing else"],
+        [reread(oneLine), "# T\n\nBranch: b\n\nProse.\n", "a key that shares a line loses its segment and not the line"],
+        [reread(ownLines), "# T\n\nProse.\n", "a header of nothing but the archive goes, with the blank line under it"],
+        [reread(headless), "# T\n\nArchived: 2026-03-02\nOutcome: reference\n\nProse.\n", "a plan with no header gets one, and removing a key it lacks changes nothing"],
         [path.basename(made), `${new Date().toISOString().slice(0, 10)}-a-plan-the-picker-made.md`, "a new plan is named by its title under today's date"],
         [again, made, "and making it twice is the same file"],
         [fs.readFileSync(made, "utf8").endsWith("edited by hand\n"), true, "with what the first one wrote still in it"],

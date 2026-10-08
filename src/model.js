@@ -531,6 +531,33 @@ const planBranches = (text) =>
         .map((name) => plainText(name))
         .filter(Boolean)
 
+/** `Archived:` and `Outcome:` as `{ date, outcome, note }`, where the outcome is
+ *  the first word and the note the rest. Undefined for a plan still in play. */
+function planArchive(text) {
+    const header = planHeader(text)
+    if (!header.Archived) return undefined
+    const [outcome, ...note] = plainText(header.Outcome ?? "").split(/\s+/)
+    return {
+        date: plainText(header.Archived),
+        outcome: outcome || undefined,
+        note: note.join(" ") || undefined,
+    }
+}
+
+/** The `.md` plans named after this one, like its `-pr-notes.md`, still in play */
+function planSiblings(plans, plan) {
+    const stem = `${plan.name.replace(/\.md$/, "")}-`
+    return plans.filter(
+        (p) => !p.archived && p.name.endsWith(".md") && p.name.startsWith(stem)
+    )
+}
+
+/** Of the PRs given, those whose head is a branch the plan or a phase of it names */
+function planPrs(plan, prs) {
+    const names = new Set([...plan.branches, ...plan.stages.flatMap((s) => s.branches)])
+    return prs.filter((pr) => names.has(pr.headRefName))
+}
+
 /** Branch name to the plans and phases that name it, which is the whole of how
  *  a branch row finds its plan. A branch named by both a plan and one of its
  *  phases resolves to the phase, because the phase says where in the plan the
@@ -682,4 +709,4 @@ function planProgress(plan) {
     return `${items.filter((i) => i.done).length}/${items.length}`
 }
 
-module.exports = { isHeaderLine, liveBranch, livePlans, pinnedPlans, setPlanPinned, parkedPlans, setPlanParked, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, isStatusIgnored, setStatusIgnored, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
+module.exports = { isHeaderLine, liveBranch, planArchive, planPrs, planSiblings, livePlans, pinnedPlans, setPlanPinned, parkedPlans, setPlanParked, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, isStatusIgnored, setStatusIgnored, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }

@@ -113,8 +113,9 @@ report that instead.
 
 ### Plans
 
-Its own icon in the activity bar. The markdown files in `plans/`, in two sections: the plans
-pinned by hand or by an applied branch, then all the others, each newest first. It exists because that directory is invisible to everything else: `plans/` is gitignored,
+Its own icon in the activity bar. The markdown files in `plans/`, in three sections: the plans
+pinned by hand or by an applied branch, then all the others, each newest first, then the
+archived ones. It exists because that directory is invisible to everything else: `plans/` is gitignored,
 VSCode's search skips ignored files by default, so a plan is in neither the Source Control
 view nor Ctrl+Shift+F. The magnifier on the section header opens that same search scoped to
 `plans/` with ignore files switched off, seeded from the editor selection like Ctrl+Shift+F is.
@@ -128,12 +129,12 @@ most of what tells two plans on the same topic apart.
 would otherwise say its age. That is the whole of what the `Branch:` line below buys, and it is
 derived: a plan is live because a branch it names is applied right now, so merging a branch
 moves its plan out of Pinned with nothing to update. **Pin Plan**, on hover, puts any other
-plan there by hand until you unpin it. Unpinning a live plan parks it in Other for as long as
+plan there by hand until you unpin it. Unpinning a live plan parks it in Open for as long as
 that branch stays applied — a branch waiting on review need not sit at the top — and the
 parking expires with the branch, so applying it again pins the plan again. Both are kept in
 VSCode's workspace state rather than in the file, so neither writes into a plan an agent may
 be editing. The section
-is hidden while nothing is pinned, and the Other section drops its header while it is the
+is hidden while nothing is pinned, and the Open section drops its header while it is the
 only one showing.
 
 **Within a section, newest first.** The list is flat: how far through a plan is shows in
@@ -167,6 +168,38 @@ confidently wrong, so an unlinked plan simply sorts by recency as it always did.
 picks the plan, `Link plan…` on a plan or phase row picks the branch, and `New plan…` on a
 branch row starts one already linked. The picker puts the closest filename first under a
 separator that says it is a guess.
+
+**Archived plans keep their place in `plans/`.** Shipped or abandoned work still holds
+decisions and measurements, so a plan whose work is over says so in its header rather than
+being deleted. Two more keys go in the paragraph under the title, on one line or two:
+
+```markdown
+# Bespoke metadata modal
+
+Branch: bespoke-metadata-modal
+Archived: 2026-10-08 · Outcome: shipped #7119
+```
+
+`Archived:` takes the date. `Outcome:` starts with one of `shipped` (the text names the
+PRs), `abandoned` (why, in a few words), `superseded` (the plan or PR that replaced it) or
+`reference` (an investigation or survey that was never meant to ship). An `Archived:` line
+with no `Outcome:` is still archived, and an unknown first word is shown as written. A
+directory plan carries both in its overview.
+
+An archived plan shows only in the **Archived** section, whatever pinned it or whichever of its
+branches is applied. The section is collapsed by default and hidden while nothing is
+archived. Its rows have a dimmed archive icon and say the outcome and date where the others
+say progress and age, newest archive first. That order comes from the date in the header and
+not the mtime, since archiving writes the file. The `Branch:` line stays, so a branch row
+still finds its plan.
+
+**Archive Plan…**, in a plan row's context menu, asks for the outcome and a note, then writes
+both lines. For `shipped` the note starts with the PR numbers of the plan's branches if the
+PR list has them. That list holds open PRs only, so it is often empty. Files named after the
+plan, like `2026-09-07-featured-viz-contributors-pr-notes.md` next to
+`2026-09-07-featured-viz-contributors.md`, are offered for archiving with the same outcome.
+**Unarchive Plan**, on hover in Archived, removes both keys. The pin and the parking are kept
+in workspace state and left alone, so the plan goes back to the section it was in.
 
 A **directory is one plan**, not a row per file. It takes its title and its phases from
 `overview.md` or `README.md`, where a phase is a `.md` file the overview links to, in the
@@ -211,7 +244,7 @@ rather than checkboxes: ticking one would mean writing `- [x]` back into a file 
 be editing in the same second, and for a directory plan, writing to the overview from a row
 rendered out of it.
 
-Both views are hidden unless the directory exists, which takes the activity-bar icon with
+All three views are hidden unless the directory exists, which takes the activity-bar icon with
 them: VSCode registers an extension's containers with `hideIfEmpty`, so a container whose
 every view is hidden is hidden too. `butReview.plansDirectory` says which directory to look for.
 

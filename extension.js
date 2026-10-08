@@ -2,12 +2,12 @@
 
 const vscode = require("vscode")
 const path = require("path")
-const { stacksOf, status, uncommittedPlan } = require("./src/but")
+const { openPrs, stacksOf, status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
 const { BASE, DECORATION, FILE, IGNORED, PR } = require("./src/items")
-const { committedMode, layoutKey, nextHunk, setPlanParked, setPlanPinned, setStatusIgnored, sharedWords, stackKey, stackKeys, stackName } = require("./src/model")
-const { createPlan, listPlans, plansRoot, writePlanLink } = require("./src/plans")
+const { committedMode, layoutKey, nextHunk, planPrs, planSiblings, setPlanParked, setPlanPinned, setStatusIgnored, sharedWords, stackKey, stackKeys, stackName } = require("./src/model")
+const { createPlan, listPlans, plansRoot, writePlanArchive, writePlanLink } = require("./src/plans")
 const { BranchTree, PlanTree, PrTree, UncommittedTree, planListing } = require("./src/trees")
 
 function activate(context) {
@@ -64,15 +64,16 @@ function activate(context) {
     const dirtyView = vscode.window.createTreeView("butReview.uncommitted", {
         treeDataProvider: dirty,
     })
-    // Two views over one listing: the plans pinned by hand or by an applied
-    // branch, then the rest. Paired with their views, since a row is revealed
-    // through the view that holds it.
-    const planViews = [true, false].map((pinned) => {
-        const tree = new PlanTree(pinned, store)
-        const view = vscode.window.createTreeView(
-            pinned ? "butReview.pinnedPlans" : "butReview.plans",
-            { treeDataProvider: tree }
-        )
+    // Three views over one listing: the plans pinned by hand or by an applied
+    // branch, the rest, then the archived ones. Paired with their views, since a
+    // row is revealed through the view that holds it.
+    const planViews = [
+        ["pinned", "butReview.pinnedPlans"],
+        ["other", "butReview.plans"],
+        ["archived", "butReview.archivedPlans"],
+    ].map(([section, id]) => {
+        const tree = new PlanTree(section, store)
+        const view = vscode.window.createTreeView(id, { treeDataProvider: tree })
         return [tree, view]
     })
     const planTrees = planViews.map(([tree]) => tree)
@@ -83,7 +84,8 @@ function activate(context) {
     // Hidden without a plans directory, since `plans/` is one person's
     // convention rather than a GitButler one. The Pinned view is hidden while
     // nothing is pinned, so nothing renders an empty box — which means its own
-    // getChildren can't be what discovers the state.
+    // getChildren can't be what discovers the state. The Archived view is
+    // hidden the same way while nothing is archived.
     const syncPlans = async () => {
         const root = repoRoot()
         const dir = root ? await plansRoot(root) : undefined
@@ -92,7 +94,13 @@ function activate(context) {
         vscode.commands.executeCommand(
             "setContext",
             "butReview.hasPinnedPlans",
-            !!listing && listing.live.size + listing.pinned.size > 0
+            !!listing &&
+                [...listing.live.keys(), ...listing.pinned].some((p) => !p.archived)
+        )
+        vscode.commands.executeCommand(
+            "setContext",
+            "butReview.hasArchivedPlans",
+            !!listing && listing.plans.some((p) => p.archived)
         )
     }
 
@@ -617,6 +625,50 @@ function activate(context) {
             })
         }),
 
+        // An archive is two keys in the plan's header, written to the plan and
+        // to whichever of the files named after it you keep ticked.
+        // Unarchiving takes the keys away and nothing else, so a pinned or
+        // parked plan goes back where it was.
+        vscode.commands.registerCommand("butReview.archivePlan", async (node) => {
+            try {
+                const plan = node.plan
+                const archived = await pickArchive(plan)
+                if (!archived) return
+                const siblings = planSiblings(await listPlans(repoRoot()), plan)
+                const along = siblings.length
+                    ? await vscode.window.showQuickPick(
+                          siblings.map((p) => ({
+                              label: p.title,
+                              description: p.name,
+                              picked: true,
+                              plan: p,
+                          })),
+                          {
+                              title: `Archive these with ${plan.title}?`,
+                              placeHolder: "Files named after the plan, archived with the same outcome",
+                              canPickMany: true,
+                          }
+                      )
+                    : []
+                if (!along) return
+                for (const p of [plan, ...along.map((pick) => pick.plan)])
+                    await writePlanArchive(p.file, archived)
+                refreshPlans()
+                tree.refresh()
+            } catch (e) {
+                vscode.window.showErrorMessage(`but-review: ${e.message}`)
+            }
+        }),
+        vscode.commands.registerCommand("butReview.unarchivePlan", async (node) => {
+            try {
+                await writePlanArchive(node.plan.file, undefined)
+                refreshPlans()
+                tree.refresh()
+            } catch (e) {
+                vscode.window.showErrorMessage(`but-review: ${e.message}`)
+            }
+        }),
+
         // A live plan is pinned by its branch, so pinning one back means
         // unparking it, and unpinning one parks it for as long as that branch
         // is applied.
@@ -1040,6 +1092,37 @@ function pickBranch(st) {
     return vscode.window
         .showQuickPick(picks, { title: "Which branch is this plan for?" })
         .then((pick) => pick?.label)
+}
+
+/** The words `Outcome:` starts with, each with what the note after it says */
+const OUTCOMES = [
+    { label: "shipped", detail: "The work landed", prompt: "The PR or PRs it landed in" },
+    { label: "abandoned", detail: "The work stopped and nothing replaced it", prompt: "Why, in a few words" },
+    { label: "superseded", detail: "Other work replaced it", prompt: "The plan or PR that replaced it" },
+    { label: "reference", detail: "An investigation, survey or issue draft, never meant to ship", prompt: "Anything worth adding, or nothing" },
+]
+
+/** How a plan ended and a note on it, as `writePlanArchive` takes them. A shipped
+ *  plan's note starts as the PRs of its branches that the PR list already holds,
+ *  which is only ever the open ones: `gh pr list` lists nothing merged. */
+async function pickArchive(plan) {
+    const pick = await vscode.window.showQuickPick(OUTCOMES, {
+        title: `Archive ${plan.title}`,
+        placeHolder: "How did it end?",
+    })
+    if (!pick) return undefined
+    const prs = pick.label === "shipped" ? planPrs(plan, openPrs.arrived() ?? []) : []
+    const note = await vscode.window.showInputBox({
+        title: `Archive ${plan.title} as ${pick.label}`,
+        prompt: pick.prompt,
+        value: prs.map((pr) => `#${pr.number}`).join(", "),
+    })
+    if (note === undefined) return undefined
+    return {
+        date: new Date().toISOString().slice(0, 10),
+        outcome: pick.label,
+        note: note.trim() || undefined,
+    }
 }
 
 /** Which plan a branch is, or which phase of one. The closest filename goes
