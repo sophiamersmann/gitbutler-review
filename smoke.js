@@ -719,11 +719,16 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
                 : { title: `🔨🤖 ${t ? `(${t}) ` : ""}did a thing` },
         })),
     })
+    // branches with no PRs, so only their names can name the stack
+    const branchesNamed = (...names) => ({ branches: names.map((name) => ({ name })) })
     const cases = [
         [api.stackName(of("a", "b", "a")), "a", "the topic most PRs carry wins"],
         [api.stackName(of("a", "b")), "a", "a tie goes to the branch nearest the top"],
         [api.stackName(of(undefined, "b", "b")), "b", "a branch without a PR casts no vote"],
         [api.stackName(of("", "")), "Stack of 2", "no topics anywhere, and no name to give"],
+        [api.stackName(branchesNamed("reference-entity-debug", "reference-entity")), "reference-entity", "a prefix ends on a word boundary"],
+        [api.stackName(branchesNamed("data-table-a", "data-table-b", "fix-typo")), "data-table", "the prefix most branches share wins"],
+        [api.stackName(branchesNamed("data-table-a", "chart-x", "fix-typo")), "Stack of 3", "a prefix held by half or fewer is no name"],
     ].filter(([got, want]) => got !== want)
     for (const [got, want, what] of cases)
         console.log(`PROBLEM  stack name: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
@@ -752,7 +757,7 @@ console.log(`ok: ${branches} branch rows, ${stackRows} stack rows`)
     for (const [got, want, what] of more)
         console.log(`PROBLEM  stack name: ${what} gave ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
     if (more.length) process.exitCode = 1
-    console.log(`ok: stack names — ${11 - cases.length - more.length}/11 cases`)
+    console.log(`ok: stack names — ${14 - cases.length - more.length}/14 cases`)
 }
 
 const prs = await api.listPrs(root)

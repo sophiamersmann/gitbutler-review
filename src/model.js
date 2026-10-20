@@ -96,7 +96,7 @@ const isDemoted = (name) => {
 /** A stack has no name of its own, so never borrow a member's — least of all
  *  the top branch, which changes every time another is pushed on. Prefer the
  *  name given by hand, then the `(topic)` its PR titles agree on, then what
- *  the branch names agree on, then admit there is no name. */
+ *  most branch names start with, then admit there is no name. */
 function stackName(stack) {
     // an explicit name beats any reading of the PRs, which is the whole point
     // of setting one
@@ -113,20 +113,23 @@ function stackName(stack) {
     const commonest = [...topics].sort((a, b) => b[1] - a[1])[0]
     if (commonest) return commonest[0]
 
+    // a branch votes for each of its hyphen-token prefixes, and the longest held
+    // by more than half the branches wins: the most-voted would always be the
+    // first token
     const names = stack.branches.map((b) => b.name)
-    let prefix = ""
-    for (let i = 0; i < names[0].length; i++) {
-        const c = names[0][i]
-        if (!names.every((n) => n[i] === c)) break
-        prefix += c
+    const prefixes = new Map()
+    for (const name of names) {
+        const tokens = name.split("-")
+        for (let i = 1; i <= tokens.length; i++) {
+            const prefix = tokens.slice(0, i).join("-")
+            prefixes.set(prefix, (prefixes.get(prefix) ?? 0) + 1)
+        }
     }
-    // keep the prefix only if it ends on a word boundary in every name, so
-    // reference-entity{,-debug} keeps "reference-entity" rather than "reference"
-    const clean = names.every(
-        (n) => n.length === prefix.length || n[prefix.length] === "-"
-    )
-    if (!clean) prefix = prefix.replace(/-?[^-]*$/, "")
-    return prefix.length > 2 ? prefix : `Stack of ${names.length}`
+    const prefix = [...prefixes]
+        .filter(([, votes]) => votes > names.length / 2)
+        .map(([prefix]) => prefix)
+        .sort((a, b) => b.length - a.length)[0]
+    return prefix?.length > 2 ? prefix : `Stack of ${names.length}`
 }
 
 /** A stack read as one diff: merge base to stack tip, which is what the target
