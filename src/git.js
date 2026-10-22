@@ -3,6 +3,7 @@
 
 const vscode = require("vscode")
 const { run } = require("./exec")
+const { diffSpans } = require("./model")
 
 // git's empty tree: `git show <it>:anything` fails, so the provider yields "".
 // Used as the right-hand side for files that no longer exist.
@@ -137,6 +138,12 @@ async function hunkRanges(root, a, b, file) {
     }
     return ranges
 }
+
+/** The hunks of `git diff a b -- file` as spans, for mapping lines across */
+const spansBetween = async (root, a, b, file) =>
+    diffSpans(
+        await git(root, ["diff", "--no-ext-diff", "-U0", "--no-renames", a, b, "--", file])
+    )
 
 /** Both sets of hunks the right-hand pane holds, in its line numbers: what this
  *  branch put there, and what the other applied branches contribute.
@@ -304,4 +311,4 @@ function overlapMap(files) {
     return map
 }
 
-module.exports = { EMPTY_TREE, diffNames, changedFiles, paneRanges, blameLines, hunkOwners, contaminated, branchFiles, overlapMap }
+module.exports = { EMPTY_TREE, diffNames, changedFiles, hunkRanges, spansBetween, paneRanges, blameLines, hunkOwners, contaminated, branchFiles, overlapMap }

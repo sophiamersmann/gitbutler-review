@@ -178,6 +178,11 @@
                 "category": "GitButler Review"
             },
             {
+                "command": "butReview.postComment",
+                "title": "Comment on Pull Request",
+                "category": "GitButler Review"
+            },
+            {
                 "command": "butReview.openDirty",
                 "title": "Open Change",
                 "category": "GitButler Review"
@@ -369,6 +374,10 @@
                 },
                 {
                     "command": "butReview.openFile",
+                    "when": "false"
+                },
+                {
+                    "command": "butReview.postComment",
                     "when": "false"
                 },
                 {
@@ -584,6 +593,13 @@
                     "command": "butReview.renameStack",
                     "when": "(view == butReview.branches && viewItem == stack) || (view == butReview.prs && viewItem == prStack)",
                     "group": "1_modify"
+                }
+            ],
+            "comments/commentThread/context": [
+                {
+                    "command": "butReview.postComment",
+                    "when": "commentController == butReview",
+                    "group": "inline"
                 }
             ],
             "editor/title": [

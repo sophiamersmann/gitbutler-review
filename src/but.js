@@ -340,7 +340,7 @@ const listPrs = async (root) =>
             [
                 "pr", "list", "--author", "@me", "--limit", "100",
                 "--json",
-                "id,number,title,url,isDraft,author,reviews,reviewRequests,headRefName,additions,deletions",
+                "id,number,title,url,isDraft,author,reviews,reviewRequests,headRefName,headRefOid,additions,deletions",
             ],
             root
         )
@@ -375,4 +375,43 @@ openPrs.invalidate = () => (prCache = {})
 /** The list if it has arrived, for a caller that must not wait on the network */
 openPrs.arrived = () => prCache.prs
 
-module.exports = { status, stacksOf, uncommittedPlan, rangeKey, listPrs, openPrs, prDetails, toCheck }
+/** "https://github.com/o/r/pull/12" -> "repos/o/r/pulls/12", the REST path the
+ *  review comments hang off */
+const pullPath = (pr) => {
+    const [, repo, number] = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(pr.url)
+    return `repos/${repo}/pulls/${number}`
+}
+
+/** The commit GitHub has as the PR's head right now. The PR list is cached
+ *  until a refresh, so its own `headRefOid` predates any push since. */
+const prHead = async (root, pr) =>
+    JSON.parse(
+        await run("gh", ["pr", "view", pr.url, "--json", "headRefOid"], root)
+    ).headRefOid
+
+/** Every review comment on a PR, replies included */
+const prComments = async (root, pr) =>
+    JSON.parse(
+        await run("gh", ["api", "--paginate", "--slurp", `${pullPath(pr)}/comments`], root)
+    ).flat()
+
+/** Posts a review comment on `commit`, the PR's head, or a reply to the thread
+ *  `replyTo` starts. Lines are 1-based and in that commit's version of the file. */
+async function postPrComment(root, pr, { body, commit, file, line, startLine, replyTo }) {
+    const args = replyTo
+        ? ["api", `${pullPath(pr)}/comments/${replyTo}/replies`, "-f", `body=${body}`]
+        : [
+              "api", `${pullPath(pr)}/comments`,
+              "-f", `body=${body}`,
+              "-f", `commit_id=${commit}`,
+              "-f", `path=${file}`,
+              "-F", `line=${line}`,
+              "-f", "side=RIGHT",
+              ...(startLine < line
+                  ? ["-F", `start_line=${startLine}`, "-f", "start_side=RIGHT"]
+                  : []),
+          ]
+    return JSON.parse(await run("gh", args, root))
+}
+
+module.exports = { status, stacksOf, uncommittedPlan, rangeKey, listPrs, openPrs, prDetails, toCheck, prComments, prHead, postPrComment }

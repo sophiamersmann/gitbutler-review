@@ -2,9 +2,10 @@
 
 const vscode = require("vscode")
 const path = require("path")
-const { openPrs, stacksOf, status, uncommittedPlan } = require("./src/but")
+const { openPrs, prHead, stacksOf, status, uncommittedPlan } = require("./src/but")
 const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
+const { reviewComments } = require("./src/comments")
 const { BASE, DECORATION, FILE, IGNORED, PR } = require("./src/items")
 const { committedMode, layoutKey, nextHunk, planPrs, planSiblings, setPlanParked, setPlanPinned, setStatusIgnored, sharedWords, stackKey, stackKeys, stackName } = require("./src/model")
 const { createPlan, listPlans, plansRoot, writePlanArchive, writePlanLink } = require("./src/plans")
@@ -147,6 +148,9 @@ function activate(context) {
             n > 0
         )
     }
+
+    const comments = reviewComments()
+    context.subscriptions.push(...comments.disposables)
 
     const openDiff = (left, right, title, opts) =>
         vscode.commands.executeCommand("vscode.diff", left, right, title, opts)
@@ -849,6 +853,42 @@ function activate(context) {
                         paneKey(left.toString(), right.toString()),
                         { branch, f, alsoIn }
                     )
+
+                // Commentable only on the branch's own diff, which is what its
+                // PR shows: the whole-stack lens spans several PRs, so it gets
+                // none. The lines are mapped onto the pushed head, which has to
+                // be in this repo for that.
+                const pr =
+                    onCommit && !branch.committed && !branch.members && f.status !== "D"
+                        ? openPrs.arrived()?.find((p) => p.headRefName === branch.name)
+                        : undefined
+                const tip = pr
+                    ? (await run("git", ["rev-parse", branch.name], root)).trim()
+                    : undefined
+                // in place, so the next pane of this branch needn't ask again
+                if (pr && tip !== pr.headRefOid)
+                    pr.headRefOid = await prHead(root, pr).catch(() => pr.headRefOid)
+                const hasHead =
+                    !!pr &&
+                    (await run("git", ["cat-file", "-e", `${pr.headRefOid}^{commit}`], root)
+                        .then(() => true)
+                        .catch(() => false))
+                if (hasHead)
+                    comments.attach(right, {
+                        pr,
+                        head: pr.headRefOid,
+                        branch: branch.name,
+                        base: branch.base,
+                        file: f.file,
+                    })
+                else {
+                    comments.forget(right.toString())
+                    if (pr)
+                        vscode.window.setStatusBarMessage(
+                            `Commenting off: #${pr.number}'s head isn't in this repo, fetch it first`,
+                            5000
+                        )
+                }
 
                 // an entry even when nothing is foreign: `ranges` empty repaints
                 // as cleared, and `own` is what F7 walks

@@ -395,6 +395,31 @@ function hunkRange(hunk) {
     return lineRange(Number(start), Number(start) + Number(count) - 1)
 }
 
+/** The hunk headers of a -U0 diff, each as the lines it spans on either side */
+function diffSpans(diff) {
+    const side = (start, count) => ({
+        start: Number(start),
+        count: count === undefined ? 1 : Number(count),
+    })
+    return [...diff.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)].map(
+        (m) => ({ old: side(m[1], m[2]), new: side(m[3], m[4]) })
+    )
+}
+
+/** Where 1-based `line` on the `from` side of a diff sits on the `to` side, or
+ *  undefined when the diff changed it. A span of no lines is an insertion or a
+ *  deletion sitting after line `start`. */
+function mapLine(spans, line, from, to) {
+    let shift = 0
+    for (const span of spans) {
+        const { start, count } = span[from]
+        if (line < (count ? start : start + 1)) break
+        if (line < start + count) return undefined
+        shift += span[to].count - count
+    }
+    return line + shift
+}
+
 /** Which hunk F7 lands on from `line`, wrapping at either end — past the last
  *  one the useful answer is the first, not a dead key. */
 function nextHunk(ranges, line, step) {
@@ -712,4 +737,4 @@ function planProgress(plan) {
     return `${items.filter((i) => i.done).length}/${items.length}`
 }
 
-module.exports = { isHeaderLine, liveBranch, planArchive, planPrs, planSiblings, livePlans, pinnedPlans, setPlanPinned, parkedPlans, setPlanParked, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, isStatusIgnored, setStatusIgnored, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
+module.exports = { diffSpans, mapLine, isHeaderLine, liveBranch, planArchive, planPrs, planSiblings, livePlans, pinnedPlans, setPlanPinned, parkedPlans, setPlanParked, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, isStatusIgnored, setStatusIgnored, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
