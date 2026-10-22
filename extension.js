@@ -7,7 +7,7 @@ const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
 const { reviewComments } = require("./src/comments")
 const { BASE, DECORATION, FILE, IGNORED, PR } = require("./src/items")
-const { committedMode, layoutKey, nextHunk, planPrs, planSiblings, setPlanParked, setPlanPinned, setStatusIgnored, sharedWords, stackKey, stackKeys, stackName } = require("./src/model")
+const { committedMode, layoutKey, nextHunk, planPrs, planSiblings, reviewLenses, reviewPrefixes, setPlanParked, setPlanPinned, setStatusIgnored, sharedWords, stackKey, stackKeys, stackName, wholeStack } = require("./src/model")
 const { createPlan, listPlans, plansRoot, writePlanArchive, writePlanLink } = require("./src/plans")
 const { BranchTree, PlanTree, PrTree, UncommittedTree, planListing } = require("./src/trees")
 
@@ -17,6 +17,7 @@ function activate(context) {
     const store = {
         get: (k) => context.workspaceState.get(k),
         set: (k, v) => context.workspaceState.update(k, v),
+        keys: () => context.workspaceState.keys(),
     }
     const tree = new BranchTree(store)
     const prs = new PrTree(store)
@@ -688,6 +689,34 @@ function activate(context) {
         // `(topic)` its branches' PR titles agree on — and when that reading is
         // wrong, or the branches have no PRs yet, this is how you say so. Keyed
         // on the bottom branch, so it survives pushing another branch on top.
+        // Both modes, and a stack's whole-stack lens with its branches. Undone
+        // from the message rather than confirmed up front.
+        vscode.commands.registerCommand("butReview.resetReview", async (node) => {
+            const lenses = node.stack
+                ? [...node.stack.branches, wholeStack(node.stack)]
+                : [node.branch]
+            const prefixes = reviewLenses(lenses).flatMap(reviewPrefixes)
+            const cleared = store
+                .keys()
+                .filter((k) => prefixes.some((p) => k.startsWith(p)))
+                .map((k) => [k, store.get(k)])
+            const name = node.stack ? stackName(node.stack) : shown(node.branch)
+            if (!cleared.length) {
+                vscode.window.showInformationMessage(`Nothing ticked on \`${name}\``)
+                return
+            }
+            for (const [k] of cleared) store.set(k, undefined)
+            tree.refresh()
+            const ticks = `${cleared.length} tick${cleared.length === 1 ? "" : "s"}`
+            const pick = await vscode.window.showInformationMessage(
+                `Reset ${ticks} on \`${name}\``,
+                "Undo"
+            )
+            if (!pick) return
+            for (const [k, blob] of cleared) store.set(k, blob)
+            tree.refresh()
+        }),
+
         vscode.commands.registerCommand("butReview.renameStack", async (node) => {
             const stack = node.stack
             const name = await vscode.window.showInputBox({

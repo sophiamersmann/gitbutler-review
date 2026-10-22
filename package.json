@@ -206,6 +206,11 @@
                 "icon": "$(discard)"
             },
             {
+                "command": "butReview.resetReview",
+                "title": "Reset Review",
+                "category": "GitButler Review"
+            },
+            {
                 "command": "butReview.renameStack",
                 "title": "Rename Stack…",
                 "category": "GitButler Review",
@@ -381,6 +386,10 @@
                     "when": "false"
                 },
                 {
+                    "command": "butReview.resetReview",
+                    "when": "false"
+                },
+                {
                     "command": "butReview.openDirty",
                     "when": "false"
                 },
@@ -508,6 +517,11 @@
                     "command": "butReview.newPlan",
                     "when": "view == butReview.branches && viewItem =~ /^branch:/",
                     "group": "1_modify"
+                },
+                {
+                    "command": "butReview.resetReview",
+                    "when": "view == butReview.branches && (viewItem =~ /^branch:/ || viewItem == stack)",
+                    "group": "2_review"
                 },
                 {
                     "command": "butReview.linkPlan",

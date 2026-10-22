@@ -176,6 +176,15 @@ const commitLens = (commit) => ({
 const reviewKey = (branch, file, committed) =>
     `reviewed:${committed ? "commit:" : ""}${branch.key ?? branch.name}:${file}`
 
+/** The key prefixes of every tick under `lens`, in both review modes */
+const reviewPrefixes = (lens) =>
+    [false, true].map((committed) => reviewKey(lens, "", committed))
+
+/** Every lens whose ticks belong to these branches: their own, and their
+ *  commits', which are keyed on the commit rather than the branch */
+const reviewLenses = (branches) =>
+    branches.flatMap((b) => [b, ...(b.commits ?? []).map(commitLens)])
+
 /** What a tick on one entry writes: the key it is filed under and the blob it
  *  was reviewed at. A folder row carries one of these per file beneath it, so
  *  the two kinds of row cannot drift on how a tick is keyed — and the lens comes
@@ -737,4 +746,4 @@ function planProgress(plan) {
     return `${items.filter((i) => i.done).length}/${items.length}`
 }
 
-module.exports = { diffSpans, mapLine, isHeaderLine, liveBranch, planArchive, planPrs, planSiblings, livePlans, pinnedPlans, setPlanPinned, parkedPlans, setPlanParked, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, isStatusIgnored, setStatusIgnored, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
+module.exports = { diffSpans, mapLine, reviewLenses, reviewPrefixes, isHeaderLine, liveBranch, planArchive, planPrs, planSiblings, livePlans, pinnedPlans, setPlanPinned, parkedPlans, setPlanParked, planBranches, sharedWords, planIndex, planName, planPreview, planProgress, planRows, planStages, planTasks, planTitle, commitLens, commitsKey, committedMode, filesKey, stackKey, stackKeys, stackLabel, rollup, ciState, humanDecision, openThreads, isDemoted, isStatusIgnored, setStatusIgnored, stackName, wholeStack, reviewKey, reviewOf, layoutKey, layoutFor, byBranch, changedLines, allReviewed, entriesIn, fileTree, folderKey, hunkLine, hunkRange, lineRange, nextHunk, positions, rowsOf, splitOverlap }
