@@ -193,11 +193,10 @@ say progress and age, newest archive first. That order comes from the date in th
 not the mtime, since archiving writes the file. The `Branch:` line stays, so a branch row
 still finds its plan.
 
-**Archive Plan…**, on hover in Pinned and Open, asks for the outcome and a note, then writes
-both lines. For `shipped` the note starts with the PR numbers of the plan's branches if the
-PR list has them. That list holds open PRs only, so it is often empty. Files named after the
-plan, like `2026-09-07-featured-viz-contributors-pr-notes.md` next to
-`2026-09-07-featured-viz-contributors.md`, are offered for archiving with the same outcome.
+**Archive Plan**, on hover in Pinned and Open, writes today's date as `Archived:` and asks
+nothing. Files named after the plan, like `2026-09-07-featured-viz-contributors-pr-notes.md`
+next to `2026-09-07-featured-viz-contributors.md`, are archived with it. An `Outcome:` is
+yours to add by hand.
 **Unarchive Plan**, on hover in Archived, removes both keys. The pin and the parking are kept
 in workspace state and left alone, so the plan goes back to the section it was in.
 

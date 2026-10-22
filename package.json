@@ -320,7 +320,7 @@
             },
             {
                 "command": "butReview.archivePlan",
-                "title": "Archive Plan\u2026",
+                "title": "Archive Plan",
                 "category": "GitButler Review",
                 "icon": "$(archive)"
             },

@@ -7,7 +7,7 @@ const { cfg, repoRoot, run, uri } = require("./src/exec")
 const { EMPTY_TREE, hunkOwners, paneRanges } = require("./src/git")
 const { reviewComments } = require("./src/comments")
 const { BASE, DECORATION, FILE, IGNORED, PR } = require("./src/items")
-const { committedMode, layoutKey, nextHunk, planPrs, planSiblings, reviewLenses, reviewPrefixes, setPlanParked, setPlanPinned, setStatusIgnored, sharedWords, stackKey, stackKeys, stackName, wholeStack } = require("./src/model")
+const { committedMode, layoutKey, nextHunk, planSiblings, reviewLenses, reviewPrefixes, setPlanParked, setPlanPinned, setStatusIgnored, sharedWords, stackKey, stackKeys, stackName, wholeStack } = require("./src/model")
 const { createPlan, listPlans, plansRoot, writePlanArchive, writePlanLink } = require("./src/plans")
 const { BranchTree, PlanTree, PrTree, UncommittedTree, planListing } = require("./src/trees")
 
@@ -612,33 +612,16 @@ function activate(context) {
             })
         }),
 
-        // An archive is two keys in the plan's header, written to the plan and
-        // to whichever of the files named after it you keep ticked.
-        // Unarchiving takes the keys away and nothing else, so a pinned or
-        // parked plan goes back where it was.
+        // An archive is the date in the plan's header, written to the plan and
+        // to every file named after it, without asking anything. Unarchiving
+        // takes the keys away and nothing else, so a pinned or parked plan goes
+        // back where it was.
         vscode.commands.registerCommand("butReview.archivePlan", async (node) => {
             try {
                 const plan = node.plan
-                const archived = await pickArchive(plan)
-                if (!archived) return
+                const archived = { date: new Date().toISOString().slice(0, 10) }
                 const siblings = planSiblings(await listPlans(repoRoot()), plan)
-                const along = siblings.length
-                    ? await vscode.window.showQuickPick(
-                          siblings.map((p) => ({
-                              label: p.title,
-                              description: p.name,
-                              picked: true,
-                              plan: p,
-                          })),
-                          {
-                              title: `Archive these with ${plan.title}?`,
-                              placeHolder: "Files named after the plan, archived with the same outcome",
-                              canPickMany: true,
-                          }
-                      )
-                    : []
-                if (!along) return
-                for (const p of [plan, ...along.map((pick) => pick.plan)])
+                for (const p of [plan, ...siblings])
                     await writePlanArchive(p.file, archived)
                 refreshPlans()
                 tree.refresh()
@@ -1143,37 +1126,6 @@ function pickBranch(st) {
     return vscode.window
         .showQuickPick(picks, { title: "Which branch is this plan for?" })
         .then((pick) => pick?.label)
-}
-
-/** The words `Outcome:` starts with, each with what the note after it says */
-const OUTCOMES = [
-    { label: "shipped", detail: "The work landed", prompt: "The PR or PRs it landed in" },
-    { label: "abandoned", detail: "The work stopped and nothing replaced it", prompt: "Why, in a few words" },
-    { label: "superseded", detail: "Other work replaced it", prompt: "The plan or PR that replaced it" },
-    { label: "reference", detail: "An investigation, survey or issue draft, never meant to ship", prompt: "Anything worth adding, or nothing" },
-]
-
-/** How a plan ended and a note on it, as `writePlanArchive` takes them. A shipped
- *  plan's note starts as the PRs of its branches that the PR list already holds,
- *  which is only ever the open ones: `gh pr list` lists nothing merged. */
-async function pickArchive(plan) {
-    const pick = await vscode.window.showQuickPick(OUTCOMES, {
-        title: `Archive ${plan.title}`,
-        placeHolder: "How did it end?",
-    })
-    if (!pick) return undefined
-    const prs = pick.label === "shipped" ? planPrs(plan, openPrs.arrived() ?? []) : []
-    const note = await vscode.window.showInputBox({
-        title: `Archive ${plan.title} as ${pick.label}`,
-        prompt: pick.prompt,
-        value: prs.map((pr) => `#${pr.number}`).join(", "),
-    })
-    if (note === undefined) return undefined
-    return {
-        date: new Date().toISOString().slice(0, 10),
-        outcome: pick.label,
-        note: note.trim() || undefined,
-    }
 }
 
 /** Which plan a branch is, or which phase of one. The closest filename goes
