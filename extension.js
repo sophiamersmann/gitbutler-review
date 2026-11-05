@@ -723,6 +723,11 @@ function activate(context) {
             vscode.env.openExternal(vscode.Uri.parse(node.url))
         ),
 
+        vscode.commands.registerCommand("butReview.copyBranchName", async (node) => {
+            await vscode.env.clipboard.writeText(node.branch.name)
+            vscode.window.setStatusBarMessage(`Copied ${node.branch.name}`, 2000)
+        }),
+
         vscode.commands.registerCommand("butReview.copyUrl", (node) =>
             vscode.env.clipboard.writeText(node.url)
         ),

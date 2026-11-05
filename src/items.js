@@ -379,7 +379,8 @@ function branchItem(branch, overrides) {
             .filter(Boolean)
             .join("\n")
     )
-    item.contextValue = `branch:${layoutFor(branch, overrides)}`
+    // `:named` sets it apart from the whole-stack row, whose name is no branch's
+    item.contextValue = `branch:${layoutFor(branch, overrides)}:named`
     item.branch = branch
     return item
 }

@@ -331,6 +331,12 @@
                 "icon": "$(discard)"
             },
             {
+                "command": "butReview.copyBranchName",
+                "title": "Copy Branch Name",
+                "category": "GitButler Review",
+                "icon": "$(copy)"
+            },
+            {
                 "command": "butReview.copyPlanPath",
                 "title": "Copy Path",
                 "category": "GitButler Review",
@@ -458,6 +464,10 @@
                     "when": "false"
                 },
                 {
+                    "command": "butReview.copyBranchName",
+                    "when": "false"
+                },
+                {
                     "command": "butReview.copyPlanPath",
                     "when": "false"
                 },
@@ -508,6 +518,11 @@
                 }
             ],
             "view/item/context": [
+                {
+                    "command": "butReview.copyBranchName",
+                    "when": "view == butReview.branches && viewItem =~ /:named$/",
+                    "group": "inline@3"
+                },
                 {
                     "command": "butReview.linkPlan",
                     "when": "view == butReview.branches && viewItem =~ /^branch:/",
@@ -595,12 +610,12 @@
                 },
                 {
                     "command": "butReview.viewAsTree",
-                    "when": "view == butReview.branches && viewItem =~ /^branch:list$/",
+                    "when": "view == butReview.branches && viewItem =~ /^branch:list\\b/",
                     "group": "inline@2"
                 },
                 {
                     "command": "butReview.viewAsList",
-                    "when": "view == butReview.branches && viewItem =~ /^branch:tree$/",
+                    "when": "view == butReview.branches && viewItem =~ /^branch:tree\\b/",
                     "group": "inline@2"
                 },
                 {
